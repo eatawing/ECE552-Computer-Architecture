@@ -402,6 +402,19 @@ sim_main(void)
         }
       }
 
+      for (int i = 0; i < 2; i++) {
+        if (r_out[i] == DNA)
+          continue;
+
+        if ((MD_OP_FLAGS(op) & F_LOAD) && (MD_OP_FLAGS(op) & F_MEM)) {
+          reg_ready_q2[r_out[i]] = sim_num_insn + 2;
+        } else if (MD_OP_FLAGS(op) & F_STORE) {
+          reg_ready_q2[r_out[i]] = sim_num_insn;
+        } else {
+          reg_ready_q2[r_out[i]] = sim_num_insn + 1;
+        }
+      }
+
       /* ECE552 Assignment 1 - STATS COUNTERS - END */
 
       if (fault != md_fault_none)
