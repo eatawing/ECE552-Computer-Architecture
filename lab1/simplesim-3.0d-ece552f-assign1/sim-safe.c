@@ -67,8 +67,14 @@
 
 
 /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
+static counter_t reg_ready_q2[MD_TOTAL_REGS];
+
 static counter_t sim_num_RAW_hazard_q1;
 static counter_t sim_num_RAW_hazard_q2;
+
+static counter_t sim_num_RAW_hazard_one_cycle_stall_q2;
+static counter_t sim_num_RAW_hazard_two_cycle_stall_q2;
+
 /* ECE552 Assignment 1 - STATS COUNTERS - END */
 
 /*
@@ -143,13 +149,21 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 		   "total number of RAW hazards (q2)",
 		   &sim_num_RAW_hazard_q2, sim_num_RAW_hazard_q2, NULL);
 
+   stat_reg_counter(sdb, "sim_num_RAW_hazard_one_cycle_stall_q2",
+      "total number of RAW hazard with one cycle stall (q2)",
+      &sim_num_RAW_hazard_one_cycle_stall_q2, sim_num_RAW_hazard_one_cycle_stall_q2, NULL);
+
+    stat_reg_counter(sdb, "sim_num_RAW_hazard_two_cycle_stall_q2",
+      "total number of RAW hazard with two cycle stall (q2)",
+      &sim_num_RAW_hazard_two_cycle_stall_q2, sim_num_RAW_hazard_two_cycle_stall_q2, NULL);
+
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q1",
 		   "CPI from RAW hazard (q1)",
 		   "1" /* ECE552 - MUST ADD YOUR FORMULA */, NULL);
 
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q2",
 		   "CPI from RAW hazard (q2)",
-		   "1" /* ECE552 - MUST ADD YOUR FORMULA */, NULL);
+		   "(sim_num_insn + sim_num_RAW_hazard_one_cycle_stall_q2 + 2 * sim_num_RAW_hazard_two_cycle_q2) / sim_num_insn" , NULL);
 
   /* ECE552 Assignment 1 - END CODE */
 
@@ -313,6 +327,10 @@ sim_main(void)
   register int is_write;
   enum md_fault_type fault;
 
+  /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
+  int r_out[2], r_in[3];
+  /* ECE552 Assignment 1 - STATS COUNTERS - END */
+  
   fprintf(stderr, "sim: ** starting functional simulation **\n");
 
   /* set up initial default next PC */
@@ -353,6 +371,10 @@ sim_main(void)
 	{
 #define DEFINST(OP,MSK,NAME,OPFORM,RES,FLAGS,O1,O2,I1,I2,I3)		\
 	case OP:							\
+          /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
+          r_out[0] = (O1); r_out[1] = (O2); \
+          r_in[0] = (I1); r_in[1] = (I2); r_in[2] = (I3); \
+          /* ECE552 Assignment 2 - STATS COUNTERS - END */
           SYMCAT(OP,_IMPL);						\
           break;
 #define DEFLINK(OP,MSK,NAME,MASK,SHIFT)					\
@@ -365,6 +387,22 @@ sim_main(void)
 	default:
 	  panic("attempted to execute a bogus opcode");
       }
+
+      /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
+      // Question 2
+      for (int i = 0; i < 3; i++) {
+        if (r_in[i] != DNA && reg_ready_q2[r_in[i]] > sim_num_insn) {
+          if (reg_ready_q2[r_in[i]] == sim_num_insn + 1) {
+            sim_num_RAW_hazard_one_cycle_stall_q2++;
+          } else if (reg_ready_q2[r_in[i]] == sim_num_insn + 2) {
+            sim_num_RAW_hazard_two_cycle_stall_q2++;
+          }
+
+          sim_num_RAW_hazard_q2++;
+        }
+      }
+
+      /* ECE552 Assignment 1 - STATS COUNTERS - END */
 
       if (fault != md_fault_none)
 	fatal("fault (%d) detected @ 0x%08p", fault, regs.regs_PC);
