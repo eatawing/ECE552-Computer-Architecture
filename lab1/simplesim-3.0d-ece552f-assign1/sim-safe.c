@@ -67,10 +67,14 @@
 
 
 /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
+static counter_t reg_ready_q1[MD_TOTAL_REGS];
 static counter_t reg_ready_q2[MD_TOTAL_REGS];
 
 static counter_t sim_num_RAW_hazard_q1;
 static counter_t sim_num_RAW_hazard_q2;
+
+static counter_t sim_num_RAW_hazard_one_cycle_stall_q1;
+static counter_t sim_num_RAW_hazard_two_cycle_stall_q1;
 
 static counter_t sim_num_RAW_hazard_one_cycle_stall_q2;
 static counter_t sim_num_RAW_hazard_two_cycle_stall_q2;
@@ -159,7 +163,7 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q1",
 		   "CPI from RAW hazard (q1)",
-		   "1" /* ECE552 - MUST ADD YOUR FORMULA */, NULL);
+		   "(sim_num_insn + sim_num_RAW_hazard_one_cycle_stall_q1 + 2 * sim_num_RAW_hazard_two_cycle_q1) / sim_num_insn", NULL);
 
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q2",
 		   "CPI from RAW hazard (q2)",
@@ -389,29 +393,77 @@ sim_main(void)
       }
 
       /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
-      // Question 2
+      // Question 1
+      counter_t stall_cycle_q1 = 0;
       for (int i = 0; i < 3; i++) {
-        if (r_in[i] != DNA && reg_ready_q2[r_in[i]] > sim_num_insn) {
-          if (reg_ready_q2[r_in[i]] == sim_num_insn + 1) {
-            sim_num_RAW_hazard_one_cycle_stall_q2++;
-          } else if (reg_ready_q2[r_in[i]] == sim_num_insn + 2) {
-            sim_num_RAW_hazard_two_cycle_stall_q2++;
+        counter_t reg_ready_cycle = reg_ready_q1[r_in[i]] - sim_num_insn; 
+        if (r_in[i] != DNA && reg_ready_cycle > sim_num_insn) {
+          if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
+            continue;
+          }   
+         
+          if (reg_ready_cycle - sim_num_insn > stall_cycle_q1) {
+            stall_cycle_q1 = reg_ready_cycle - sim_num_insn;
           }
+        }
+      }
 
-          sim_num_RAW_hazard_q2++;
+      if (stall_cycle_q1 > 0) {
+        sim_num_RAW_hazard_q1++;
+
+        if (stall_cycle_q1 == 1) {
+          sim_num_RAW_hazard_one_cycle_stall_q1++;
+        } else if (stall_cycle_q1 == 2) {
+          sim_num_RAW_hazard_two_cycle_stall_q1++;
+        }
+
+        for (int i = 0; i < MD_TOTAL_REGS; i++) {
+          reg_ready_q1[i] -= stall_cycle_q1;
         }
       }
 
       for (int i = 0; i < 2; i++) {
-        if (r_out[i] == DNA)
-          continue;
+        if (r_out[i] != DNA) {
+          reg_ready_q1[r_out[i]] = sim_num_insn + 3;
+        }
+      }
 
-        if ((MD_OP_FLAGS(op) & F_LOAD) && (MD_OP_FLAGS(op) & F_MEM)) {
-          reg_ready_q2[r_out[i]] = sim_num_insn + 2;
-        } else if (MD_OP_FLAGS(op) & F_STORE) {
-          reg_ready_q2[r_out[i]] = sim_num_insn;
-        } else {
-          reg_ready_q2[r_out[i]] = sim_num_insn + 1;
+      // Question 2
+      counter_t stall_cycle_q2 = 0;
+      for (int i = 0; i < 3; i++) {
+        counter_t reg_ready_cycle = reg_ready_q2[r_in[i]] - sim_num_insn; 
+        if (r_in[i] != DNA && reg_ready_cycle > sim_num_insn) {
+          if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
+            continue;
+          }   
+         
+          if (reg_ready_cycle - sim_num_insn > stall_cycle_q2) {
+            stall_cycle_q2 = reg_ready_cycle - sim_num_insn;
+          }
+        }
+      }
+
+      if (stall_cycle_q2 > 0) {
+        sim_num_RAW_hazard_q2++;
+
+        if (stall_cycle_q2 == 1) {
+          sim_num_RAW_hazard_one_cycle_stall_q2++;
+        } else if (stall_cycle_q2 == 2) {
+          sim_num_RAW_hazard_two_cycle_stall_q2++;
+        }
+
+        for (int i = 0; i < MD_TOTAL_REGS; i++) {
+          reg_ready_q2[i] -= stall_cycle_q2;
+        }
+      }
+
+      for (int i = 0; i < 2; i++) {
+        if (r_out[i] != DNA) {
+          if ((MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_LOAD)) {
+            reg_ready_q2[r_out[i]] = sim_num_insn + 3;
+          } else {
+            reg_ready_q2[r_out[i]] = sim_num_insn + 2;
+          }
         }
       }
 
