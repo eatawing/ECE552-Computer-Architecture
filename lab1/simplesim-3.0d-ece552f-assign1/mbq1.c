@@ -9,7 +9,7 @@ int main(int argc, char **argv) {
             "add $5, $1, $2\n\t"
             "add $6, $4, $0\n\t" // 1-cycle stall
             "sw $6, 0($3)\n\t" // no stall
-            "addi $7, $0, 7"
+            "addi $7, $0, 7\n\t"
             "lw $5, 0($7)\n\t" // 2-cycle stall
             // 5 cycles stall in total
         );
