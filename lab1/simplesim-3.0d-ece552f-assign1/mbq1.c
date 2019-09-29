@@ -1,6 +1,6 @@
 int main(int argc, char **argv) {
     int i;
-    for (i = 0; i < 10000; ++i) {
+    for (i = 0; i < 1000000; ++i) {
         __asm__(
             "addi $1, $0, 1\n\t"
             "add $2, $0, $1\n\t" // 2-cycle stall
@@ -9,7 +9,8 @@ int main(int argc, char **argv) {
             "add $5, $1, $2\n\t"
             "add $6, $4, $0\n\t" // 1-cycle stall
             "sw $6, 0($3)\n\t" // no stall
-            "lw $5, 0($6)\n\t" // 2-cycle stall
+            "addi $7, $0, 7"
+            "lw $5, 0($7)\n\t" // 2-cycle stall
             // 5 cycles stall in total
         );
     }
