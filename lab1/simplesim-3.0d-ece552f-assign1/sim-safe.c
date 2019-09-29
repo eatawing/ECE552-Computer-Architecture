@@ -171,11 +171,11 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q1",
 		   "CPI from RAW hazard (q1)",
-		   "1+ sim_num_RAW_hazard_one_cycle_stall_q1 / sim_num_insn + 2 * sim_num_RAW_hazard_two_cycle_q1 / sim_num_insn", NULL);
+		   "1+ (sim_num_RAW_hazard_one_cycle_stall_q1 + 2 * sim_num_RAW_hazard_two_cycle_stall_q1) / sim_num_insn", NULL);
 
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q2",
 		   "CPI from RAW hazard (q2)",
-		   "1 + sim_num_RAW_hazard_one_cycle_stall_q2 / sim_num_insn + 2 * sim_num_RAW_hazard_two_cycle_q2 / sim_num_insn" , NULL);
+		   "1 + (sim_num_RAW_hazard_one_cycle_stall_q2 + 2 * sim_num_RAW_hazard_two_cycle_stall_q2) / sim_num_insn" , NULL);
 
   /* ECE552 Assignment 1 - END CODE */
 
