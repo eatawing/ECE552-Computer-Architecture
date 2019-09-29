@@ -153,7 +153,15 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 		   "total number of RAW hazards (q2)",
 		   &sim_num_RAW_hazard_q2, sim_num_RAW_hazard_q2, NULL);
 
-   stat_reg_counter(sdb, "sim_num_RAW_hazard_one_cycle_stall_q2",
+    stat_reg_counter(sdb, "sim_num_RAW_hazard_one_cycle_stall_q1",
+      "total number of RAW hazard with one cycle stall (q1)",
+      &sim_num_RAW_hazard_one_cycle_stall_q1, sim_num_RAW_hazard_one_cycle_stall_q1, NULL);
+
+    stat_reg_counter(sdb, "sim_num_RAW_hazard_two_cycle_stall_q1",
+      "total number of RAW hazard with two cycle stall (q1)",
+      &sim_num_RAW_hazard_two_cycle_stall_q1, sim_num_RAW_hazard_two_cycle_stall_q1, NULL);
+
+    stat_reg_counter(sdb, "sim_num_RAW_hazard_one_cycle_stall_q2",
       "total number of RAW hazard with one cycle stall (q2)",
       &sim_num_RAW_hazard_one_cycle_stall_q2, sim_num_RAW_hazard_one_cycle_stall_q2, NULL);
 
@@ -163,11 +171,11 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q1",
 		   "CPI from RAW hazard (q1)",
-		   "(sim_num_insn + sim_num_RAW_hazard_one_cycle_stall_q1 + 2 * sim_num_RAW_hazard_two_cycle_q1) / sim_num_insn", NULL);
+		   "1+ sim_num_RAW_hazard_one_cycle_stall_q1 / sim_num_insn + 2 * sim_num_RAW_hazard_two_cycle_q1 / sim_num_insn", NULL);
 
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q2",
 		   "CPI from RAW hazard (q2)",
-		   "(sim_num_insn + sim_num_RAW_hazard_one_cycle_stall_q2 + 2 * sim_num_RAW_hazard_two_cycle_q2) / sim_num_insn" , NULL);
+		   "1 + sim_num_RAW_hazard_one_cycle_stall_q2 / sim_num_insn + 2 * sim_num_RAW_hazard_two_cycle_q2 / sim_num_insn" , NULL);
 
   /* ECE552 Assignment 1 - END CODE */
 
@@ -396,7 +404,7 @@ sim_main(void)
       // Question 1
       counter_t stall_cycle_q1 = 0;
       for (int i = 0; i < 3; i++) {
-        counter_t reg_ready_cycle = reg_ready_q1[r_in[i]] - sim_num_insn; 
+        counter_t reg_ready_cycle = reg_ready_q1[r_in[i]]; 
         if (r_in[i] != DNA && reg_ready_cycle > sim_num_insn) {
           if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
             continue;
@@ -431,7 +439,7 @@ sim_main(void)
       // Question 2
       counter_t stall_cycle_q2 = 0;
       for (int i = 0; i < 3; i++) {
-        counter_t reg_ready_cycle = reg_ready_q2[r_in[i]] - sim_num_insn; 
+        counter_t reg_ready_cycle = reg_ready_q2[r_in[i]]; 
         if (r_in[i] != DNA && reg_ready_cycle > sim_num_insn) {
           if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
             continue;
