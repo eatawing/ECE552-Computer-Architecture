@@ -404,15 +404,13 @@ sim_main(void)
       // Question 1
       counter_t stall_cycle_q1 = 0;
       for (int i = 0; i < 3; i++) {
-        counter_t reg_ready_cycle = reg_ready_q1[r_in[i]]; 
-        if (r_in[i] != DNA && reg_ready_cycle > sim_num_insn) {
+        counter_t reg_ready_cycle = reg_ready_q1[r_in[i]] - sim_num_insn; 
+        if (r_in[i] != DNA && reg_ready_cycle > stall_cycle_q1) {
           if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
             continue;
-          }   
-         
-          if (reg_ready_cycle - sim_num_insn > stall_cycle_q1) {
-            stall_cycle_q1 = reg_ready_cycle - sim_num_insn;
-          }
+          }  
+
+          stall_cycle_q1 = reg_ready_cycle - sim_num_insn;
         }
       }
 
@@ -439,15 +437,13 @@ sim_main(void)
       // Question 2
       counter_t stall_cycle_q2 = 0;
       for (int i = 0; i < 3; i++) {
-        counter_t reg_ready_cycle = reg_ready_q2[r_in[i]]; 
-        if (r_in[i] != DNA && reg_ready_cycle > sim_num_insn) {
+        counter_t reg_ready_cycle = reg_ready_q2[r_in[i]] - sim_num_insn; 
+        if (r_in[i] != DNA && reg_ready_cycle > stall_cycle_q2) {
           if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
             continue;
           }   
-         
-          if (reg_ready_cycle - sim_num_insn > stall_cycle_q2) {
-            stall_cycle_q2 = reg_ready_cycle - sim_num_insn;
-          }
+
+          stall_cycle_q2 = reg_ready_cycle - sim_num_insn;
         }
       }
 
