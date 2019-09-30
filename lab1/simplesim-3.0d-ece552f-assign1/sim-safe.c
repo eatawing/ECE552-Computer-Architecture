@@ -67,8 +67,18 @@
 
 
 /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
+static counter_t reg_ready_q1[MD_TOTAL_REGS];
+static counter_t reg_ready_q2[MD_TOTAL_REGS];
+
 static counter_t sim_num_RAW_hazard_q1;
 static counter_t sim_num_RAW_hazard_q2;
+
+static counter_t sim_num_RAW_hazard_one_cycle_stall_q1;
+static counter_t sim_num_RAW_hazard_two_cycle_stall_q1;
+
+static counter_t sim_num_RAW_hazard_one_cycle_stall_q2;
+static counter_t sim_num_RAW_hazard_two_cycle_stall_q2;
+
 /* ECE552 Assignment 1 - STATS COUNTERS - END */
 
 /*
@@ -143,13 +153,29 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 		   "total number of RAW hazards (q2)",
 		   &sim_num_RAW_hazard_q2, sim_num_RAW_hazard_q2, NULL);
 
+    stat_reg_counter(sdb, "sim_num_RAW_hazard_one_cycle_stall_q1",
+      "total number of RAW hazard with one cycle stall (q1)",
+      &sim_num_RAW_hazard_one_cycle_stall_q1, sim_num_RAW_hazard_one_cycle_stall_q1, NULL);
+
+    stat_reg_counter(sdb, "sim_num_RAW_hazard_two_cycle_stall_q1",
+      "total number of RAW hazard with two cycle stall (q1)",
+      &sim_num_RAW_hazard_two_cycle_stall_q1, sim_num_RAW_hazard_two_cycle_stall_q1, NULL);
+
+    stat_reg_counter(sdb, "sim_num_RAW_hazard_one_cycle_stall_q2",
+      "total number of RAW hazard with one cycle stall (q2)",
+      &sim_num_RAW_hazard_one_cycle_stall_q2, sim_num_RAW_hazard_one_cycle_stall_q2, NULL);
+
+    stat_reg_counter(sdb, "sim_num_RAW_hazard_two_cycle_stall_q2",
+      "total number of RAW hazard with two cycle stall (q2)",
+      &sim_num_RAW_hazard_two_cycle_stall_q2, sim_num_RAW_hazard_two_cycle_stall_q2, NULL);
+
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q1",
 		   "CPI from RAW hazard (q1)",
-		   "1" /* ECE552 - MUST ADD YOUR FORMULA */, NULL);
+		   "1+ (sim_num_RAW_hazard_one_cycle_stall_q1 + 2 * sim_num_RAW_hazard_two_cycle_stall_q1) / sim_num_insn", NULL);
 
   stat_reg_formula(sdb, "CPI_from_RAW_hazard_q2",
 		   "CPI from RAW hazard (q2)",
-		   "1" /* ECE552 - MUST ADD YOUR FORMULA */, NULL);
+		   "1 + (sim_num_RAW_hazard_one_cycle_stall_q2 + 2 * sim_num_RAW_hazard_two_cycle_stall_q2) / sim_num_insn" , NULL);
 
   /* ECE552 Assignment 1 - END CODE */
 
@@ -313,6 +339,10 @@ sim_main(void)
   register int is_write;
   enum md_fault_type fault;
 
+  /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
+  int r_out[2], r_in[3];
+  /* ECE552 Assignment 1 - STATS COUNTERS - END */
+  
   fprintf(stderr, "sim: ** starting functional simulation **\n");
 
   /* set up initial default next PC */
@@ -351,10 +381,14 @@ sim_main(void)
 
       switch (op)
 	{
+/* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
 #define DEFINST(OP,MSK,NAME,OPFORM,RES,FLAGS,O1,O2,I1,I2,I3)		\
 	case OP:							\
+          r_out[0] = (O1); r_out[1] = (O2); \
+          r_in[0] = (I1); r_in[1] = (I2); r_in[2] = (I3); \
           SYMCAT(OP,_IMPL);						\
           break;
+/* ECE552 Assignment 2 - STATS COUNTERS - END */
 #define DEFLINK(OP,MSK,NAME,MASK,SHIFT)					\
         case OP:							\
           panic("attempted to execute a linking opcode");
@@ -365,6 +399,75 @@ sim_main(void)
 	default:
 	  panic("attempted to execute a bogus opcode");
       }
+
+      /* ECE552 Assignment 1 - STATS COUNTERS - BEGIN */
+      // Question 1
+      counter_t stall_cycle_q1 = 0;
+      for (int i = 0; i < 3; i++) {
+        counter_t reg_ready_cycle = reg_ready_q1[r_in[i]] - sim_num_insn; 
+        if (r_in[i] != DNA && reg_ready_cycle > stall_cycle_q1) {
+          stall_cycle_q1 = reg_ready_cycle;
+        }
+      }
+
+      if (stall_cycle_q1 > 0) {
+        sim_num_RAW_hazard_q1++;
+
+        if (stall_cycle_q1 == 1) {
+          sim_num_RAW_hazard_one_cycle_stall_q1++;
+        } else if (stall_cycle_q1 == 2) {
+          sim_num_RAW_hazard_two_cycle_stall_q1++;
+        }
+
+        for (int i = 0; i < MD_TOTAL_REGS; i++) {
+          reg_ready_q1[i] -= stall_cycle_q1;
+        }
+      }
+
+      for (int i = 0; i < 2; i++) {
+        if (r_out[i] != DNA) {
+          reg_ready_q1[r_out[i]] = sim_num_insn + 3;
+        }
+      }
+
+      // Question 2
+      counter_t stall_cycle_q2 = 0;
+      for (int i = 0; i < 3; i++) {
+        counter_t reg_ready_cycle = reg_ready_q2[r_in[i]] - sim_num_insn; 
+        if (r_in[i] != DNA && reg_ready_cycle > stall_cycle_q2) {
+          if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
+            continue;
+          }   
+
+          stall_cycle_q2 = reg_ready_cycle;
+        }
+      }
+
+      if (stall_cycle_q2 > 0) {
+        sim_num_RAW_hazard_q2++;
+
+        if (stall_cycle_q2 == 1) {
+          sim_num_RAW_hazard_one_cycle_stall_q2++;
+        } else if (stall_cycle_q2 == 2) {
+          sim_num_RAW_hazard_two_cycle_stall_q2++;
+        }
+
+        for (int i = 0; i < MD_TOTAL_REGS; i++) {
+          reg_ready_q2[i] -= stall_cycle_q2;
+        }
+      }
+
+      for (int i = 0; i < 2; i++) {
+        if (r_out[i] != DNA) {
+          if ((MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_LOAD)) {
+            reg_ready_q2[r_out[i]] = sim_num_insn + 3;
+          } else {
+            reg_ready_q2[r_out[i]] = sim_num_insn + 2;
+          }
+        }
+      }
+
+      /* ECE552 Assignment 1 - STATS COUNTERS - END */
 
       if (fault != md_fault_none)
 	fatal("fault (%d) detected @ 0x%08p", fault, regs.regs_PC);
