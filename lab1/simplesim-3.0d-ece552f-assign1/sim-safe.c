@@ -406,10 +406,6 @@ sim_main(void)
       for (int i = 0; i < 3; i++) {
         counter_t reg_ready_cycle = reg_ready_q1[r_in[i]] - sim_num_insn; 
         if (r_in[i] != DNA && reg_ready_cycle > stall_cycle_q1) {
-          if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
-            continue;
-          }  
-
           stall_cycle_q1 = reg_ready_cycle;
         }
       }
