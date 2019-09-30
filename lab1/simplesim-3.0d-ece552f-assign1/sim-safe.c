@@ -410,7 +410,7 @@ sim_main(void)
             continue;
           }  
 
-          stall_cycle_q1 = reg_ready_cycle - sim_num_insn;
+          stall_cycle_q1 = reg_ready_cycle;
         }
       }
 
@@ -443,7 +443,7 @@ sim_main(void)
             continue;
           }   
 
-          stall_cycle_q2 = reg_ready_cycle - sim_num_insn;
+          stall_cycle_q2 = reg_ready_cycle;
         }
       }
 
