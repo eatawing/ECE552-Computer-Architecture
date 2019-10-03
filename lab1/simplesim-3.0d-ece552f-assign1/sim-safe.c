@@ -406,6 +406,7 @@ sim_main(void)
       for (int i = 0; i < 3; i++) {
         counter_t reg_ready_cycle = reg_ready_q1[r_in[i]] - sim_num_insn; 
         if (r_in[i] != DNA && reg_ready_cycle > stall_cycle_q1) {
+          // find the maximum stall cycle needed for the instruction
           stall_cycle_q1 = reg_ready_cycle;
         }
       }
@@ -413,17 +414,20 @@ sim_main(void)
       if (stall_cycle_q1 > 0) {
         sim_num_RAW_hazard_q1++;
 
+        // increment corresponding hazard counters
         if (stall_cycle_q1 == 1) {
           sim_num_RAW_hazard_one_cycle_stall_q1++;
         } else if (stall_cycle_q1 == 2) {
           sim_num_RAW_hazard_two_cycle_stall_q1++;
         }
 
+        // reset reg_ready for all registers after stall
         for (int i = 0; i < MD_TOTAL_REGS; i++) {
           reg_ready_q1[i] -= stall_cycle_q1;
         }
       }
 
+      // set reg_ready for output registers to be current instruction number + 3
       for (int i = 0; i < 2; i++) {
         if (r_out[i] != DNA) {
           reg_ready_q1[r_out[i]] = sim_num_insn + 3;
@@ -435,23 +439,27 @@ sim_main(void)
       for (int i = 0; i < 3; i++) {
         counter_t reg_ready_cycle = reg_ready_q2[r_in[i]] - sim_num_insn; 
         if (r_in[i] != DNA && reg_ready_cycle > stall_cycle_q2) {
+          // store value corner case
           if ((i == 0) && (MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_STORE)) {
             continue;
           }   
 
+          // find the maximum stall cycle needed for the instruction
           stall_cycle_q2 = reg_ready_cycle;
         }
       }
 
       if (stall_cycle_q2 > 0) {
         sim_num_RAW_hazard_q2++;
-
+        
+        // increment corresponding hazard counters
         if (stall_cycle_q2 == 1) {
           sim_num_RAW_hazard_one_cycle_stall_q2++;
         } else if (stall_cycle_q2 == 2) {
           sim_num_RAW_hazard_two_cycle_stall_q2++;
         }
 
+         // reset reg_ready for all registers after stall
         for (int i = 0; i < MD_TOTAL_REGS; i++) {
           reg_ready_q2[i] -= stall_cycle_q2;
         }
@@ -459,9 +467,11 @@ sim_main(void)
 
       for (int i = 0; i < 2; i++) {
         if (r_out[i] != DNA) {
+          // for load instructions, reg_ready is current instruction number + 3
           if ((MD_OP_FLAGS(op) & F_MEM) && (MD_OP_FLAGS(op) & F_LOAD)) {
             reg_ready_q2[r_out[i]] = sim_num_insn + 3;
           } else {
+            //for others, reg_ready is current intruction number + 2
             reg_ready_q2[r_out[i]] = sim_num_insn + 2;
           }
         }
