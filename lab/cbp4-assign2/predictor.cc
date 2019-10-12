@@ -19,9 +19,9 @@ bool GetPrediction_2bitsat(UINT32 PC) {
 
 void UpdatePredictor_2bitsat(UINT32 PC, bool resolveDir, bool predDir, UINT32 branchTarget) {
   UINT32 prediction_table_index = PC & 0xFFF;
-  if (predDir == TAKEN && twobitsat_prediction_table[prediction_table_index] < 0b11) {
+  if (resolveDir == TAKEN && twobitsat_prediction_table[prediction_table_index] < 0b11) {
     twobitsat_prediction_table[prediction_table_index]++;
-  } else if (predDir == NOT_TAKEN && twobitsat_prediction_table[prediction_table_index] > 0b00) {
+  } else if (resolveDir == NOT_TAKEN && twobitsat_prediction_table[prediction_table_index] > 0b00) {
     twobitsat_prediction_table[prediction_table_index]--;
   }
 }
@@ -53,7 +53,7 @@ bool GetPrediction_2level(UINT32 PC) {
   uint8_t pht_table_index = PC & 0b111;
   uint8_t pht_entry_index = twolevel_bht[bht_index];
   
-  return twolevel_pht[pht_table_index][pht_entry_index] > 0b01 ? TAKEN : NOT_TAKEN;
+  return twolevel_pht[pht_table_index][pht_entry_index] >= 0b10 ? TAKEN : NOT_TAKEN;
 }
 
 void UpdatePredictor_2level(UINT32 PC, bool resolveDir, bool predDir, UINT32 branchTarget) {
@@ -62,9 +62,9 @@ void UpdatePredictor_2level(UINT32 PC, bool resolveDir, bool predDir, UINT32 bra
   uint8_t old_branch_history = twolevel_bht[bht_index];
 
   // update private history table
-  if (predDir == TAKEN && twolevel_pht[pht_table_index][old_branch_history] < 0b11) {
+  if (resolveDir == TAKEN && twolevel_pht[pht_table_index][old_branch_history] < 0b11) {
     twolevel_pht[pht_table_index][old_branch_history]++;
-  } else if (predDir == NOT_TAKEN && twolevel_pht[pht_table_index][old_branch_history] > 0b00) {
+  } else if (resolveDir == NOT_TAKEN && twolevel_pht[pht_table_index][old_branch_history] > 0b00) {
     twolevel_pht[pht_table_index][old_branch_history]--;
   }
 
