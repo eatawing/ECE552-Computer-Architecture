@@ -69,7 +69,7 @@ void UpdatePredictor_2level(UINT32 PC, bool resolveDir, bool predDir, UINT32 bra
   }
 
   // update branch history
-  uint8_t new_branch_history = (old_branch_history << 1) | resolveDir;
+  uint8_t new_branch_history = ((old_branch_history << 1) | resolveDir) & 0b111111;
   twolevel_bht[bht_index] = new_branch_history;
 }
 
