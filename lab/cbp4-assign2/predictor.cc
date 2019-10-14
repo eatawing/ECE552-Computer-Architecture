@@ -224,8 +224,8 @@ bool GetPrediction_openend(UINT32 PC) {
         altpred.dir = basePredictor[PC % BASE_PREDICTOR_SIZE] > 0b01 ? TAKEN : NOT_TAKEN;
       }
 
-      if (tageTables[provider.tableNum][provider.index].pred != 0b011 && tageTables[provider.tableNum][provider.index].pred != 0b100 && 
-          tageTables[provider.tableNum][provider.index].u != 0 && use_alt_on_na > 0) {
+      if (tageTables[provider.tableNum][provider.index].pred != 0b011 || tageTables[provider.tableNum][provider.index].pred != 0b100 || 
+          tageTables[provider.tableNum][provider.index].u != 0 || use_alt_on_na < 0) {
         provider.dir = tageTables[provider.tableNum][provider.index].pred > 0b011 ? TAKEN : NOT_TAKEN;
         return provider.dir;
       } else {
