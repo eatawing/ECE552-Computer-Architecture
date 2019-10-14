@@ -100,10 +100,10 @@ typedef struct fold {
   UINT32 history;
 
   void updateHistory(bitset<480> ghr) {
-    history = history << (1 + ghr[0]);
-    history ^= ((history & (1 << targetLength)) >> targetLength);
+    history = (history << 1) + ghr[0];
+    history ^= (history & (1 << targetLength)) >> targetLength;
     history ^= ghr[originLength] << (originLength % targetLength);
-    history &= ((1 << targetLength)- 1);
+    history &= (1 << targetLength) - 1;
   }
 } fold_t;
 
