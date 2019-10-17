@@ -181,11 +181,18 @@ void InitPredictor_openend() {
 bool GetPrediction_openend(UINT32 PC) {
   // printf("pred\n");
   // printf("PC=%d\n", PC);
+
+  // Reset Prime and Alt
+  provider.tableNum = TAGE_TABLE_NUM;
+  altpred.tableNum = TAGE_TABLE_NUM;
+  
+  // Tag hashing
   for (int i = 0; i < TAGE_TABLE_NUM; i++) {
     tageTagHash[i] = PC ^ tagFold[0][i].history ^ (tagFold[1][i].history << 1);
     tageTagHash[i] &= (1 << tageTable_tagWidth[i]) - 1;
   }
 
+  // Index hashing
   for (int i = 0; i < TAGE_TABLE_NUM; i++) {
     tageIndexHash[i] = PC ^ (PC >> (tageTable_tableSize[i] - i)) ^ indexFold[i].history ^ PHR ^ (PHR >> tageTable_tableSize[i]);
     // printf("tageIndexHash[%d] = %d\n", i, tageIndexHash[i]);
@@ -198,7 +205,7 @@ bool GetPrediction_openend(UINT32 PC) {
     // printf("tageIndexHash[i] = %x\n", tageIndexHash[i]);
     // printf("tag = %x\n\n", tageTables[i][tageIndexHash[i]].tag);
     if (tageTables[i][tageIndexHash[i]].tag == tageTagHash[i]) {
-    //      printf("i = %d\n", i);
+    // printf("i = %d\n", i);
     // printf("tageIndexHash[i] = %x\n", tageIndexHash[i]);
     // printf("tag = %x\n\n", tageTables[i][tageIndexHash[i]].tag);
       provider.index = tageIndexHash[i];
@@ -269,14 +276,6 @@ void UpdatePredictor_openend(UINT32 PC, bool resolveDir, bool predDir, UINT32 br
       }
     }
 
-    // if (altpred.tableNum < TAGE_TABLE_NUM && tageTables[provider.tableNum][provider.index].u == 0) {
-    //   uint8_t altPrediction = tageTables[altpred.tableNum][altpred.index].pred;
-    //   if (resolveDir && altPrediction < 0b111) {
-    //     tageTables[altpred.tableNum][altpred.index].pred++;
-    //   } else if (!resolveDir && altPrediction > 0b000) {
-    //     tageTables[altpred.tableNum][altpred.index].pred--;
-    //   }
-    // }
   } else {
     // update base predictor
     UINT32 basePredictorIndex = PC % BASE_PREDICTOR_SIZE;
