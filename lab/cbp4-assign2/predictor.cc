@@ -80,6 +80,7 @@ void UpdatePredictor_2level(UINT32 PC, bool resolveDir, bool predDir, UINT32 bra
 /////////////////////////////////////////////////////////////
 #define TAGE_TABLE_NUM 10
 #define BASE_PREDICTOR_SIZE 8192
+#define LOOP_TABLE_NUM 32
 #define GHR_LENGTH 1001
 
 typedef struct tagePredictor {
@@ -87,6 +88,16 @@ typedef struct tagePredictor {
   UINT32 tag;
   uint8_t u;
 } tagePredictor_t;
+
+typedef struct loopPredictor {
+  uint16_t past;
+  uint16_t retire;
+  uint16_t tag;
+  uint8_t confidence;
+  uint8_t age;
+  bool dir;
+  bool used;
+} loopPredictor_t;
 
 typedef struct prediction {
   int index;
@@ -109,6 +120,7 @@ typedef struct fold {
 
 uint8_t *basePredictor;
 tagePredictor_t **tageTables;
+loopPredictor_t *loopTable;
 bitset<GHR_LENGTH> GHR;
 int PHR;
 
@@ -124,9 +136,9 @@ UINT32 tageTagHash[TAGE_TABLE_NUM];
 fold_t indexFold[TAGE_TABLE_NUM];
 fold_t tagFold[2][TAGE_TABLE_NUM];
 
-UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {13, 12, 12, 12, 12, 12, 12, 12, 12, 12};
-UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {10, 10, 10, 10, 11, 11, 10, 10, 10, 10};
-UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {240, 160, 101, 64, 40, 25, 16, 10, 6, 4};
+UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {12, 10, 10, 9, 9, 9, 8, 8, 8, 7};
+UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {11, 11, 10, 9, 8, 8, 8, 8, 8, 8};
+UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {359, 226, 145, 91, 53, 37, 24, 13, 9, 4};
 
 // UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {15, 13, 12, 12, 12, 11, 10, 10, 10, 9, 9, 7};
 // UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {7, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 12};
@@ -136,6 +148,7 @@ UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {240, 160, 101, 64, 40, 25, 16,
 void InitPredictor_openend() {
   // printf("init\n");
   GHR.reset();
+  srand(114514);
   PHR = 0;
 
   basePredictor = new uint8_t[BASE_PREDICTOR_SIZE];
@@ -143,6 +156,17 @@ void InitPredictor_openend() {
     basePredictor[i] = 0b10;
   }
   
+  loopTable = new loopPredictor_t[LOOP_TABLE_NUM];
+  for (int i = 0; i < LOOP_TABLE_NUM; i++) {
+    loopTable[i].age = 0;
+    loopTable[i].confidence = 0;
+    loopTable[i].dir = 0;
+    loopTable[i].past = 0;
+    loopTable[i].retire = 0;
+    loopTable[i].tag = 0;
+    loopTable[i].used = false;
+  }
+
   tageTables = new tagePredictor_t*[TAGE_TABLE_NUM];
   for (int i = 0; i < TAGE_TABLE_NUM; i++) {
     UINT32 entryNum = 1 << tageTable_tableSize[i];
@@ -183,6 +207,20 @@ void InitPredictor_openend() {
 }
 
 bool GetPrediction_openend(UINT32 PC) {
+  // loop predictor
+  // UINT32 loopIndex = PC & LOOP_TABLE_NUM;
+  // UINT32 loopTag = PC % 10;
+  // if (loopTable[loopIndex].tag == loopTag) {
+  //   loopTable[loopIndex].dir = loopTable[loopIndex].past < loopTable[loopIndex].retire ? TAKEN : NOT_TAKEN;
+  // }
+
+  // if (loopTable[loopIndex].tag == loopTag && loopTable[loopIndex].confidence >= 7) {
+  //   loopTable[loopIndex].used = true;
+  //   return loopTable[loopIndex].dir;
+  // }
+
+  // loopTable[loopIndex].used = false;
+  // TAGE
   // Reset Prime and Alt
   provider.tableNum = TAGE_TABLE_NUM;
   altpred.tableNum = TAGE_TABLE_NUM;
@@ -250,47 +288,101 @@ int log2_floor(int x) {
 }
 
 void UpdatePredictor_openend(UINT32 PC, bool resolveDir, bool predDir, UINT32 branchTarget) {
+  // Update loop
+  // UINT32 loopIndex = PC & LOOP_TABLE_NUM;
+  // UINT32 loopTag = PC % 10;
+
+  // if (loopTable[loopIndex].tag == loopTag) {
+  //   if (loopTable[loopIndex].age == 0) {
+  //     loopTable[loopIndex].past = 1;
+  //     loopTable[loopIndex].retire = 1 << 10;
+  //     loopTable[loopIndex].tag = loopTag;
+  //     loopTable[loopIndex].age = 7;
+  //     loopTable[loopIndex].confidence = 0;
+  //     loopTable[loopIndex].dir = 0;
+  //     loopTable[loopIndex].used = 0;
+  //   } else if (loopTable[loopIndex].dir == resolveDir) {
+  //     // if (loopTable[loopIndex].age < 0b1111 && loopTable[loopIndex].used) {
+  //     //   loopTable[loopIndex].age++;
+  //     // }
+
+  //     if (loopTable[loopIndex].past < loopTable[loopIndex].retire) {
+  //       loopTable[loopIndex].past++;
+  //     } else {
+  //       loopTable[loopIndex].past = 0;
+  //       if (loopTable[loopIndex].confidence < 0b1111) {
+  //         loopTable[loopIndex].confidence++;
+  //       }
+  //     }
+  //   } else {
+  //     if (loopTable[loopIndex].age == 0b1111) {
+  //       loopTable[loopIndex].retire = loopTable[loopIndex].past;
+  //       loopTable[loopIndex].past = 0;
+  //       loopTable[loopIndex].confidence = 0b1;
+  //     } else {
+  //       loopTable[loopIndex].past = 0;
+  //       loopTable[loopIndex].retire = 0;
+  //       loopTable[loopIndex].tag = 0;
+  //       loopTable[loopIndex].age = 0;
+  //       loopTable[loopIndex].confidence = 0;
+  //       loopTable[loopIndex].dir = 0;
+  //       loopTable[loopIndex].used = 0;
+  //     }
+  //   }
+  // } else {
+  //   if (loopTable[loopIndex].age > 0) {
+  //     loopTable[loopIndex].age--;
+  //   }
+  // }
+
+  // if (loopTable[loopIndex].used) {
+  //   return;
+  // }
+
+  // Update TAGE
   bool newEntry = false;
-  if (provider.tableNum < TAGE_TABLE_NUM) {
+  if (provider.tableNum < TAGE_TABLE_NUM) {    
+    // Update useful bits
     if (provider.dir != altpred.dir) {
-      if (provider.dir == resolveDir && tageTables[provider.tableNum][provider.index].u < 0b11) {
-        tageTables[provider.tableNum][provider.index].u++;
-      } else if (provider.dir != resolveDir && tageTables[provider.tableNum][provider.index].u > 0b00) {
-        tageTables[provider.tableNum][provider.index].u--;
+      if (provider.dir == resolveDir) {
+        tageTables[provider.tableNum][provider.index].u = SatIncrement(tageTables[provider.tableNum][provider.index].u, 0b11);
+      } else {
+        tageTables[provider.tableNum][provider.index].u = SatDecrement(tageTables[provider.tableNum][provider.index].u);
       }
     }
 
-    uint8_t primePrediction = tageTables[provider.tableNum][provider.index].pred;
-    if (resolveDir && primePrediction < 0b111) {
-      tageTables[provider.tableNum][provider.index].pred++;
-    } else if (!resolveDir && primePrediction > 0b000) {
-      tageTables[provider.tableNum][provider.index].pred--;
+    // Update prime entry prediction counter
+    if (resolveDir) {
+      tageTables[provider.tableNum][provider.index].pred = SatIncrement(tageTables[provider.tableNum][provider.index].pred, 0b111);
+    } else {
+      tageTables[provider.tableNum][provider.index].pred = SatDecrement(tageTables[provider.tableNum][provider.index].pred);
     }
 
-    // useful bit is 0, i.e. newly allocated
+    // Useful bit is 0, i.e. newly allocated
     if (tageTables[provider.tableNum][provider.index].u == 0 && 
-        (primePrediction == 0b011 || primePrediction == 0b100)) {
+       (tageTables[provider.tableNum][provider.index].pred == 0b011 || tageTables[provider.tableNum][provider.index].pred == 0b100)) {
       newEntry = true;
 
-      if (provider.dir == resolveDir && altpred.dir != resolveDir && use_alt_on_na > -8) {
+      if (altpred.dir != resolveDir && use_alt_on_na > -8) {
         use_alt_on_na--;
-      } else if (provider.dir != resolveDir && altpred.dir == resolveDir && use_alt_on_na < 8) {
+      } else if (altpred.dir == resolveDir && use_alt_on_na < 8) {
         use_alt_on_na++;
       }
     }
 
   } else {
-    // update base predictor
+    // Update base predictor
     UINT32 basePredictorIndex = PC % BASE_PREDICTOR_SIZE;
-    if (resolveDir && basePredictor[basePredictorIndex] < 0b11) {
-      basePredictor[basePredictorIndex]++;
-    } else if (!resolveDir && basePredictor[basePredictorIndex] > 0b00) {
-      basePredictor[basePredictorIndex]--;
+    if (resolveDir) {
+      basePredictor[basePredictorIndex] = SatIncrement(basePredictor[basePredictorIndex], 0b11);
+    } else {
+      basePredictor[basePredictorIndex] = SatDecrement(basePredictor[basePredictorIndex]);
     }
   }
 
 
   if ((!newEntry || (newEntry && provider.dir != resolveDir)) && resolveDir != predDir && provider.tableNum > 0) {
+    // Count vacant entry across the table
     int vacancyCount = 0;
     for (int i = 0; i < provider.tableNum; i++) {
       if (tageTables[i][tageIndexHash[i]].u == 0) {
@@ -300,14 +392,14 @@ void UpdatePredictor_openend(UINT32 PC, bool resolveDir, bool predDir, UINT32 br
     
     if (vacancyCount == 0) {
       for (int i = 0; i < provider.tableNum; i++) {
-        tageTables[i][tageIndexHash[i]].u--;
+        tageTables[i][tageIndexHash[i]].u = SatDecrement(tageTables[i][tageIndexHash[i]].u);
       }
     } else {
-      srand(time(NULL));
-      int random = log2_floor(1 + rand() % ((1 << vacancyCount) - 1));
-      // printf("count = %d random = %d\n", vacancyCount, random);
+      // Allocate new entry
+      int random = log2_floor(rand() % (1 << (vacancyCount + 1)) + 1);   
+
       int count = 0;
-      for (int i = provider.tableNum - 1; i >= 0; i--) {
+      for (int i = 0; i < provider.tableNum; i++) {
         if (tageTables[i][tageIndexHash[i]].u == 0) {
           if (count == random) {
             tageTables[i][tageIndexHash[i]].pred = resolveDir ? 0b100 : 0b011;
