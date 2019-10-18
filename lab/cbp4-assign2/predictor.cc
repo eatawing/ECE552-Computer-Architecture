@@ -78,7 +78,7 @@ void UpdatePredictor_2level(UINT32 PC, bool resolveDir, bool predDir, UINT32 bra
 /////////////////////////////////////////////////////////////
 // openend
 /////////////////////////////////////////////////////////////
-#define TAGE_TABLE_NUM 8
+#define TAGE_TABLE_NUM 10
 #define BASE_PREDICTOR_SIZE 8192
 #define LOOP_TABLE_NUM 32
 #define GHR_LENGTH 512
@@ -136,12 +136,9 @@ UINT32 tageTagHash[TAGE_TABLE_NUM];
 fold_t indexFold[TAGE_TABLE_NUM];
 fold_t tagFold[2][TAGE_TABLE_NUM];
 
-// UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {12, 10, 10, 9, 9, 9, 8, 8, 8, 7};
-// UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {11, 11, 10, 9, 8, 8, 8, 8, 8, 8};
-// UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {359, 226, 145, 91, 53, 37, 24, 13, 9, 4};
-UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {11, 11, 11, 11, 11, 11, 11, 11};
-UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {10, 10, 10, 10, 10, 10, 10, 10};
-UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {256, 128, 64, 32, 16, 8, 4, 2};
+UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {12, 10, 10, 9, 9, 9, 8, 8, 8, 7};
+UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {11, 11, 10, 9, 8, 8, 8, 8, 8, 8};
+UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {359, 226, 145, 91, 53, 37, 24, 13, 9, 4};
 
 // UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {15, 13, 12, 12, 12, 11, 10, 10, 10, 9, 9, 7};
 // UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {7, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 12};
