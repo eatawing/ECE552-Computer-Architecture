@@ -547,13 +547,16 @@ counter_t runTomasulo(instruction_trace_t* trace)
   
   int cycle = 1;
   while (true) {
+    cdb_to_retire(cycle);
+    execute_to_retire(cycle);
+    issue_to_execute(cycle);
+    dispatch_to_issue(cycle);
+    fetch_to_dispatch(cycle);
 
-     /* ECE552: YOUR CODE GOES HERE */
+    cycle++;
 
-     cycle++;
-
-     if (is_simulation_done(sim_num_insn))
-        break;
+    if (is_simulation_done(sim_num_insn))
+      break;
   }
   
   return cycle;
