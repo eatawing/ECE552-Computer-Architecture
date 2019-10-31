@@ -365,17 +365,74 @@ void issue_To_execute(int current_cycle) {
  */
 void dispatch_To_issue(int current_cycle) {
   /* ECE552 Assignment 3 - BEGIN CODE */
-  for (int i = 0; i < RESERV_INT_SIZE; i++) {
-    if (reservINT[i] && reservINT[i]->tom_issue_cycle == -1) {
-      reservINT[i]->tom_issue_cycle = current_cycle;
+  // for (int i = 0; i < RESERV_INT_SIZE; i++) {
+  //   if (reservINT[i] && reservINT[i]->tom_issue_cycle == -1) {
+  //     reservINT[i]->tom_issue_cycle = current_cycle;
+  //   }
+  // }
+
+  // for (int i = 0; i < RESERV_FP_SIZE; i++) {
+  //   if (reservFP[i] && reservFP[i]->tom_issue_cycle == -1) {
+  //     reservFP[i]->tom_issue_cycle = current_cycle;
+  //   }
+  // }
+
+  /* *********************************
+   * Fetch to Dispatch
+   * 1. Find an avaliable RS entry, stall otherwise (if needed)
+   * 2. Register on map table
+   * 3. Update Q
+   * 4. Remove instr from 
+   * *********************************/
+  instruction_t **rs_entry_ptr = NULL;
+
+  // 
+  if (USES_INT_FU(cur_instr->op)) {
+    for (int i = 0; i < RESERV_INT_SIZE; i++) {
+      if (!reservINT[i]) {
+        rs_entry_ptr = &reservINT[i];
+        break;
+      }
+    }
+  } else if (USES_FP_FU(cur_instr->op)) {
+    for (int i = 0; i < RESERV_FP_SIZE; i++) {
+      if (!reservFP[i]) {
+        rs_entry_ptr = &reservFP[i];
+        break;
+      }
+    }
+  } 
+  
+  // Update reservation station entry
+  (*rs_entry_ptr) = cur_instr;
+
+  // 2. Register "out" on the map table
+  for (int i = 0; i < 2; i++) {
+    if (cur_instr->r_out[i] != DNA) {
+      map_table[cur_instr->r_out[i]] = (*rs_entry_ptr);
     }
   }
 
-  for (int i = 0; i < RESERV_FP_SIZE; i++) {
-    if (reservFP[i] && reservFP[i]->tom_issue_cycle == -1) {
-      reservFP[i]->tom_issue_cycle = current_cycle;
+  // 3. Update Q entries of the current instruction
+  for (int j = 0; j < 3; j++) {
+    if (cur_instr->r_in[j] != 0 && cur_instr->r_in[j] != DNA) {
+      cur_instr->Q[j] = map_table[cur_instr->r_in[j]];
     }
   }
+
+  // 4. Remove from IFQ
+  if (instr_queue_head != instr_queue_tail) {
+    instruction_t *temp = instr_queue_head;
+    instr_queue_head = instr_queue_head->next;
+    free(temp);
+  } else {
+    free(instr_queue_head);
+    instr_queue_tail = NULL;
+    instr_queue_head = NULL;
+  }
+
+  instr_queue_size--;
+
   /* ECE552 Assignment 3 - END CODE */
 }
 
@@ -387,7 +444,7 @@ void dispatch_To_issue(int current_cycle) {
  * Returns:
  * 	None
  */
-void fetch(instruction_trace_t* trace, int cycle) {
+void fetch(instruction_trace_t* trace) {
   /* ECE552 Assignment 3 - BEGIN CODE */
   if (instr_queue_size >= INSTR_QUEUE_SIZE) {
     // no space availble in IFQ
@@ -395,22 +452,15 @@ void fetch(instruction_trace_t* trace, int cycle) {
   }
   
   instruction_t* new_instr_fetched;
-  while (fetch_index <= sim_num_insn) {
-    fetch_index++;
-    new_instr_fetched = get_instr(trace, fetch_index);
+  new_instr_fetched = get_instr(trace, fetch_index);
+  fetch_index++;
 
-    if (new_instr_fetched && new_instr_fetched->op && !IS_TRAP(new_instr_fetched->op)) {
-      new_instr_fetched->tom_cdb_cycle      = 0;
-      new_instr_fetched->tom_dispatch_cycle = cycle;
-      new_instr_fetched->tom_execute_cycle  = 0;
-      new_instr_fetched->tom_issue_cycle    = 0;
-      break;
-    }
-  }
-
-  if (fetch_index > sim_num_insn) {
-    // all instructions are fetched
-    return;
+  if (new_instr_fetched && new_instr_fetched->op && !IS_TRAP(new_instr_fetched->op)) {
+    new_instr_fetched->tom_cdb_cycle      = 0;
+    new_instr_fetched->tom_dispatch_cycle = 0;
+    new_instr_fetched->tom_execute_cycle  = 0;
+    new_instr_fetched->tom_issue_cycle    = 0;
+    break;
   }
 
   // Init carrier for instruction and add to queue
@@ -480,25 +530,13 @@ void dispatch(instruction_t *rs, instruction_t *instr) {
  */
 void fetch_To_dispatch(instruction_trace_t* trace, int current_cycle) {
   /* ECE552 Assignment 3 - BEGIN CODE */
-  fetch(trace, current_cycle);
-  instruction_t *instr_head = instr_queue_head->instr;
+  fetch(trace);
+  instruction_t *cur_instr = instr_queue_head->instr;
 
-  assert(instr_head);
-  if (USES_INT_FU(instr_head->op)) {
-    for (int i = 0; i < RESERV_INT_SIZE; i++) {
-      if (!reservINT[i]) {
-        dispatch(reservINT[i], instr_head);
-        break;
-      }
-    }
-  } else if (USES_FP_FU(instr_head->op)) {
-    for (int i = 0; i < RESERV_FP_SIZE; i++) {
-      if (!reservFP[i]) {
-        disptach(reservFP[i], instr_head);
-        break;
-      }
-    }
-  } else if (IS_COND_CTRL(instr_head->op) || IS_UNCOND_CTRL(instr_head->op)) {
+  assert(cur_instr);
+  
+
+  else if (IS_COND_CTRL(instr_head->op) || IS_UNCOND_CTRL(instr_head->op)) {
      pop_ifq(); 
   }
   /* ECE552 Assignment 3 - END CODE */
@@ -547,11 +585,11 @@ counter_t runTomasulo(instruction_trace_t* trace)
   
   int cycle = 1;
   while (true) {
-    cdb_to_retire(cycle);
-    execute_to_retire(cycle);
-    issue_to_execute(cycle);
-    dispatch_to_issue(cycle);
-    fetch_to_dispatch(cycle);
+    CDB_To_retire(cycle);
+    execute_To_CDB(cycle);
+    issue_To_execute(cycle);
+    dispatch_To_issue(cycle);
+    fetch_To_dispatch(cycle);
 
     cycle++;
 
