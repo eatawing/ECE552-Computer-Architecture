@@ -80,7 +80,6 @@ void UpdatePredictor_2level(UINT32 PC, bool resolveDir, bool predDir, UINT32 bra
 /////////////////////////////////////////////////////////////
 #define TAGE_TABLE_NUM 10
 #define BASE_PREDICTOR_SIZE 8192
-#define LOOP_TABLE_NUM 32
 #define GHR_LENGTH 512
 
 typedef struct tagePredictor {
@@ -88,16 +87,6 @@ typedef struct tagePredictor {
   UINT32 tag;
   uint8_t u;
 } tagePredictor_t;
-
-typedef struct loopPredictor {
-  uint16_t past;
-  uint16_t retire;
-  uint16_t tag;
-  uint8_t confidence;
-  uint8_t age;
-  bool dir;
-  bool used;
-} loopPredictor_t;
 
 typedef struct prediction {
   int index;
@@ -120,7 +109,6 @@ typedef struct fold {
 
 uint8_t *basePredictor;
 tagePredictor_t **tageTables;
-loopPredictor_t *loopTable;
 bitset<GHR_LENGTH> GHR;
 int PHR;
 
@@ -136,14 +124,9 @@ UINT32 tageTagHash[TAGE_TABLE_NUM];
 fold_t indexFold[TAGE_TABLE_NUM];
 fold_t tagFold[2][TAGE_TABLE_NUM];
 
-UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {12, 10, 10, 9, 9, 9, 8, 8, 8, 7};
+UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] =  {12, 10, 10, 9, 9, 9, 8, 8, 8, 7};
 UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {11, 11, 10, 9, 8, 8, 8, 8, 8, 8};
 UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {359, 226, 145, 91, 53, 37, 24, 13, 9, 4};
-
-// UINT32 tageTable_tagWidth[TAGE_TABLE_NUM] = {15, 13, 12, 12, 12, 11, 10, 10, 10, 9, 9, 7};
-// UINT32 tageTable_tableSize[TAGE_TABLE_NUM] = {7, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 12};
-// // UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {479, 354, 230, 155, 105, 69, 55, 35, 25, 18, 10, 6};
-// UINT32 tageTable_historyLength[TAGE_TABLE_NUM] = {516, 345, 230, 153, 102, 68, 46, 31, 21, 14, 9, 6};
 
 int log2_floor(int x) {
   int res = -1;
@@ -155,25 +138,13 @@ int log2_floor(int x) {
 }
 
 void InitPredictor_openend() {
-  // printf("init\n");
   GHR.reset();
-  srand(114514);
+  srand(20583);
   PHR = 0;
 
   basePredictor = new uint8_t[BASE_PREDICTOR_SIZE];
   for (unsigned int i = 0; i < BASE_PREDICTOR_SIZE; i++) {
     basePredictor[i] = 0b10;
-  }
-  
-  loopTable = new loopPredictor_t[LOOP_TABLE_NUM];
-  for (int i = 0; i < LOOP_TABLE_NUM; i++) {
-    loopTable[i].age = 0;
-    loopTable[i].confidence = 0;
-    loopTable[i].dir = 0;
-    loopTable[i].past = 0;
-    loopTable[i].retire = 0;
-    loopTable[i].tag = 0;
-    loopTable[i].used = false;
   }
 
   tageTables = new tagePredictor_t*[TAGE_TABLE_NUM];
@@ -216,20 +187,6 @@ void InitPredictor_openend() {
 }
 
 bool GetPrediction_openend(UINT32 PC) {
-  // loop predictor
-  // UINT32 loopIndex = PC & LOOP_TABLE_NUM;
-  // UINT32 loopTag = PC % 10;
-  // if (loopTable[loopIndex].tag == loopTag) {
-  //   loopTable[loopIndex].dir = loopTable[loopIndex].past < loopTable[loopIndex].retire ? TAKEN : NOT_TAKEN;
-  // }
-
-  // if (loopTable[loopIndex].tag == loopTag && loopTable[loopIndex].confidence >= 7) {
-  //   loopTable[loopIndex].used = true;
-  //   return loopTable[loopIndex].dir;
-  // }
-
-  // loopTable[loopIndex].used = false;
-  // TAGE
   // Reset Prime and Alt
   provider.dir = -1;
   altpred.dir = -1;
@@ -281,64 +238,12 @@ bool GetPrediction_openend(UINT32 PC) {
         return altpred.dir;
       }
   } else {
-    // printf("pred5\n");
     altpred.dir = basePredictor[PC % BASE_PREDICTOR_SIZE] > 0b01 ? TAKEN : NOT_TAKEN;
     return altpred.dir;
   }
 }
 
 void UpdatePredictor_openend(UINT32 PC, bool resolveDir, bool predDir, UINT32 branchTarget) {
-  // Update loop
-  // UINT32 loopIndex = PC & LOOP_TABLE_NUM;
-  // UINT32 loopTag = PC % 10;
-
-  // if (loopTable[loopIndex].tag == loopTag) {
-  //   if (loopTable[loopIndex].age == 0) {
-  //     loopTable[loopIndex].past = 1;
-  //     loopTable[loopIndex].retire = 1 << 10;
-  //     loopTable[loopIndex].tag = loopTag;
-  //     loopTable[loopIndex].age = 7;
-  //     loopTable[loopIndex].confidence = 0;
-  //     loopTable[loopIndex].dir = 0;
-  //     loopTable[loopIndex].used = 0;
-  //   } else if (loopTable[loopIndex].dir == resolveDir) {
-  //     // if (loopTable[loopIndex].age < 0b1111 && loopTable[loopIndex].used) {
-  //     //   loopTable[loopIndex].age++;
-  //     // }
-
-  //     if (loopTable[loopIndex].past < loopTable[loopIndex].retire) {
-  //       loopTable[loopIndex].past++;
-  //     } else {
-  //       loopTable[loopIndex].past = 0;
-  //       if (loopTable[loopIndex].confidence < 0b1111) {
-  //         loopTable[loopIndex].confidence++;
-  //       }
-  //     }
-  //   } else {
-  //     if (loopTable[loopIndex].age == 0b1111) {
-  //       loopTable[loopIndex].retire = loopTable[loopIndex].past;
-  //       loopTable[loopIndex].past = 0;
-  //       loopTable[loopIndex].confidence = 0b1;
-  //     } else {
-  //       loopTable[loopIndex].past = 0;
-  //       loopTable[loopIndex].retire = 0;
-  //       loopTable[loopIndex].tag = 0;
-  //       loopTable[loopIndex].age = 0;
-  //       loopTable[loopIndex].confidence = 0;
-  //       loopTable[loopIndex].dir = 0;
-  //       loopTable[loopIndex].used = 0;
-  //     }
-  //   }
-  // } else {
-  //   if (loopTable[loopIndex].age > 0) {
-  //     loopTable[loopIndex].age--;
-  //   }
-  // }
-
-  // if (loopTable[loopIndex].used) {
-  //   return;
-  // }
-
   // Update TAGE
   bool newEntry = false;
   if (provider.tableNum < TAGE_TABLE_NUM) {    
