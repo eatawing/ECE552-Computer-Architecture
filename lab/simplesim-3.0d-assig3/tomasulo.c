@@ -1,4 +1,3 @@
-
 #include <limits.h>
 #include <assert.h>
 #include <stdbool.h>
@@ -594,8 +593,6 @@ counter_t runTomasulo(instruction_trace_t* trace)
   
   int cycle = 1;
   while (true) {
-    if (cycle == 17397)
-      printf(" ");
     CDB_To_retire(cycle);
     execute_To_CDB(cycle);
     issue_To_execute(cycle);
@@ -605,12 +602,14 @@ counter_t runTomasulo(instruction_trace_t* trace)
     cycle++;
     if (IFQ_POPED) {
       IFQ_POPED = false;
-      // printf("%d\n", cycle);
+
       instr_queue_size --;
     }
+
     if (is_simulation_done(sim_num_insn))
       break;
   }
+
   // print_all_instr(trace, sim_num_insn);
   return cycle;
 }
