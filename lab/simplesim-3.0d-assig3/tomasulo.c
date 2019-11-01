@@ -80,6 +80,7 @@
 // Linked list for instruction queue
 typedef struct instr_node_struct {
   instruction_t* instr;
+  struct instr_node_struct* prev;
   struct instr_node_struct* next;
 } instr_node;
 
@@ -137,33 +138,10 @@ void dbg_printf(const char *fmt, ...)
 static bool is_simulation_done(counter_t sim_insn) {
   /* ECE552 Assignment 3 - BEGIN CODE */
 
-  if (fetch_index < sim_insn)
+  if (fetch_index <= sim_insn)
     return false;
   
   unsigned index;
-
-  unsigned int rs_i, rs_f, fu_i, fu_f, cdb;
-
-  rs_i = 0;
-  for (index = 0; index < RESERV_INT_SIZE; index++) {
-    if (reservINT[index]) rs_i++;
-  }
-  rs_f = 0;
-  for (index = 0; index < RESERV_FP_SIZE; index++) {
-    if (reservFP[index]) rs_f++;
-  }
-  fu_i = 0;
-  for (index = 0; index < FU_INT_SIZE; index++) {
-    if (fuINT[index]) fu_i++;
-  }
-  fu_f = 0;
-  for (index = 0; index < FU_FP_SIZE; index++) {
-    if (fuFP[index]) fu_f++;
-  }
-  cdb = 0;
-  if (commonDataBus) cdb++;
-
-  TRACE(("\nrs_i: %d, rs_f: %d, fu_i: %d, fu_f: %d, cdb: %d\n", rs_i, rs_f, fu_i, fu_f, cdb));
 
   for (index = 0; index < RESERV_INT_SIZE; index++) {
     if (reservINT[index]) return false;
@@ -182,6 +160,7 @@ static bool is_simulation_done(counter_t sim_insn) {
   }
 
   if (commonDataBus) return false;
+
   return true;
   /* ECE552 Assignment 3 - END CODE */
 }
@@ -321,9 +300,11 @@ void issue_To_execute(int current_cycle) {
     
     unsigned fu_size = loop_index ? FU_FP_SIZE : FU_INT_SIZE;
     instruction_t **fu = loop_index ? fuFP : fuINT;
-
+    
+    instruction_t *cur_instr = NULL;
+    instr_node *ordered_ready_instr_chain = NULL;
     for (unsigned rs_index = 0; rs_index < rs_size; rs_index++) {
-      instruction_t *cur_instr = resrev[rs_index];
+      cur_instr = resrev[rs_index];
 
       if (!cur_instr) continue;
 
@@ -349,17 +330,66 @@ void issue_To_execute(int current_cycle) {
       // Catch the break, skip the current processing instruction
       // and proceed to the next rs in rs station
       if (!input_ready) continue;
+      instr_node* new_node = (instr_node *)malloc(sizeof(instr_node));
 
-      // 2. Check if there are function units avaliable
-      for (unsigned fu_index = 0; fu_index < fu_size; fu_index++) {
-        if (!fu[fu_index]) {
-          // Reassign function unit
-          cur_instr->tom_execute_cycle = current_cycle;
+      new_node->instr = cur_instr;
+      new_node->prev = NULL;
+      new_node->next = NULL;
+      if (!ordered_ready_instr_chain) {
+        ordered_ready_instr_chain = new_node;
+      } else {
+        instr_node* traverse = ordered_ready_instr_chain;
+        while (traverse->next && traverse->instr->index < new_node->instr->index)
+          traverse = traverse->next;
 
-          fu[fu_index] = cur_instr;
-          break;
+        if (traverse->instr->index > new_node->instr->index) {
+          if (traverse->prev) {
+            new_node->prev = traverse->prev;
+            new_node->prev->next = new_node;
+          }
+          new_node->next = traverse;
+          traverse->prev = new_node;
+        } else {
+          traverse->next = new_node;
+          new_node->prev = traverse;
+        }
+        if (new_node->next == ordered_ready_instr_chain) {
+          ordered_ready_instr_chain = new_node;
         }
       }
+    }
+
+    if (!ordered_ready_instr_chain) continue;
+
+    // 2. Check if there are function units avaliable
+    instr_node *instr_node_for_fu = ordered_ready_instr_chain;
+    for (unsigned fu_index = 0; fu_index < fu_size; fu_index++) {
+      if (!instr_node_for_fu) break;
+
+      if (!fu[fu_index]) {
+        // Reassign function unit
+        instr_node_for_fu->instr->tom_execute_cycle = current_cycle;
+
+        fu[fu_index] = instr_node_for_fu->instr;
+        instr_node_for_fu = instr_node_for_fu->next;
+      }
+    }
+
+    // int index = 0;
+    // instr_node *cur_node = ordered_ready_instr_chain;
+    // while (cur_node) {
+    //   if (cur_node->instr->index < index)
+    //     assert(0);
+    //   index = cur_node->instr->index;
+    //   cur_node = cur_node->next;
+    // }
+
+    // Free ordered instruction chain
+    instr_node *cur_node = ordered_ready_instr_chain;
+    while (cur_node) {
+      instr_node *temp = cur_node;
+      cur_node = cur_node->next;
+      free(temp);
     }
   }
   /* ECE552 Assignment 3 - END CODE */
@@ -457,19 +487,16 @@ void dispatch_To_issue(int current_cycle) {
  */
 void fetch(instruction_trace_t* trace) {
   /* ECE552 Assignment 3 - BEGIN CODE */
-
-  if (fetch_index > sim_num_insn)
-    return;
     
   instruction_t* new_instr_fetched;
   do {
     new_instr_fetched = get_instr(trace, fetch_index);
     fetch_index++;
-  } while (new_instr_fetched->op == OP_NA || IS_TRAP(new_instr_fetched->op));
+  } while (new_instr_fetched->op == OP_NA);
 
-  // if (!new_instr_fetched) {
-  //   return;
-  // }
+  if (IS_TRAP(new_instr_fetched->op)) {
+    return;
+  }
 
   // Init cycle numbers
   new_instr_fetched->tom_cdb_cycle      = 0;
@@ -509,6 +536,10 @@ void fetch_To_dispatch(instruction_trace_t* trace, int current_cycle) {
     // no space availble in IFQ
     return;
   }
+
+  
+  if (fetch_index > sim_num_insn)
+    return;
 
   fetch(trace);
 
@@ -565,15 +596,13 @@ counter_t runTomasulo(instruction_trace_t* trace)
   
   int cycle = 1;
   while (true) {
-    TRACE(("c2r\n"));
+    if (cycle == 145) {
+      printf("\n");
+    }
     CDB_To_retire(cycle);
-    TRACE(("e2c\n"));    
     execute_To_CDB(cycle);
-    TRACE(("i2e\n"));    
     issue_To_execute(cycle);
-    TRACE(("d2i\n"));    
     dispatch_To_issue(cycle);
-    TRACE(("f2d\n"));    
     fetch_To_dispatch(trace, cycle);
 
     cycle++;
@@ -581,6 +610,6 @@ counter_t runTomasulo(instruction_trace_t* trace)
     if (is_simulation_done(sim_num_insn))
       break;
   }
-  print_all_instr(trace, sim_num_insn);
+  // print_all_instr(trace, sim_num_insn);
   return cycle;
 }
