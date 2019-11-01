@@ -91,14 +91,6 @@ static instr_node* instr_queue_tail;
 //number of instructions in the instruction queue
 static int instr_queue_size = 0;
 
-unsigned int get_size(instr_node* queue_head) {
-  instr_node* cur;
-  unsigned int size = 0;
-  while (cur) {
-    size++;
-    cur = cur->next;
-  }
-}
 /* ECE552 Assignment 3 - END CODE */
 
 //reservation stations (each reservation station entry contains a pointer to an instruction)
@@ -122,7 +114,16 @@ static int fetch_index = 0;
 
 
 /* RESERVATION STATIONS */
+#define DEBUG 1
 
+#define TRACE(x) do { if (DEBUG) dbg_printf x; } while (0)
+void dbg_printf(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+}
 
 /* 
  * Description: 
@@ -135,6 +136,7 @@ static int fetch_index = 0;
  */
 static bool is_simulation_done(counter_t sim_insn) {
   /* ECE552 Assignment 3 - BEGIN CODE */
+
   if (fetch_index < sim_insn)
     return false;
   
@@ -222,43 +224,50 @@ void freeFU(instruction_t *instr) {
  */
 void execute_To_CDB(int current_cycle) {
   /* ECE552 Assignment 3 - BEGIN CODE */
-  instruction_t *instr_to_cdb;
-  for (int i = 0; i < FU_INT_SIZE; i++) {
-    if (fuINT[i]->tom_execute_cycle + FU_INT_LATENCY >= current_cycle) {
-      if (WRITES_CDB(fuINT[i]->op)) {
-        if (!instr_to_cdb || fuINT[i]->index < instr_to_cdb->index) {
-          instr_to_cdb = fuINT[i];
-        }
-      } else {
-        fuINT[i]->tom_cdb_cycle = current_cycle;
-        freeRS(fuINT[i]);
-        fuINT[i] = NULL;
-      }
+
+  /* *********************************
+   * Execute to CDB
+   * - Iterate through functional unit entries
+   *    - Check if any execution done
+   *        - Set CDB cycle
+   *        - Pick the oldest instruction
+   *        - Broadcast to CDB if CDB is free
+   *            - Free RS & FU
+   *    - Check if any execution that does not write to CDB done
+   *        - Set CDB cycle to 0
+   *        - Free RS & FU
+   * *********************************/
+  instruction_t *oldest_instr = NULL;
+
+  for (unsigned loop_index = 0; loop_index < 2; loop_index++) {
+    instruction_t **fu = loop_index ? fuINT : fuFP;
+    unsigned fu_size = loop_index ? FU_INT_SIZE : FU_FP_SIZE;
+    unsigned fu_latency = loop_index ? FU_INT_LATENCY : FU_FP_LATENCY;
+
+    for (unsigned index = 0; index < fu_size; index++) {
+      // Continue to next entry if execution is not done
+      if (!fu[index]) continue;
+      if (fu[index]->tom_execute_cycle + fu_latency >= current_cycle) continue;
+
+      if (!WRITES_CDB(fu[index]->op)) {
+        fu[index]->tom_cdb_cycle = 0;       // Instruction does not broadcase, set CDB cycle to 0
+        fu[index] = NULL;                   // Free functional unit
+        freeRS(fu[index]);                  // Free Reservation station
+      } 
+
+      if (!oldest_instr || fu[index]->index < oldest_instr->index)
+        oldest_instr = fu[index];
     }
   }
 
-  for (int i = 0; i < FU_FP_SIZE; i++) {
-    if (fuFP[i]->tom_execute_cycle + FU_INT_LATENCY >= current_cycle) {
-      if (WRITES_CDB(fuFP[i]->op)) {
-        if (!instr_to_cdb || fuFP[i]->index < instr_to_cdb->index) {
-          instr_to_cdb = fuFP[i];
-        }
-      } else {
-        fuFP[i]->tom_cdb_cycle = current_cycle;
-        freeRS(fuINT[i]);
-        fuFP[i] = NULL;
-      }
-    }
-  }
-
-  if (instr_to_cdb) {
-    instr_to_cdb->tom_cdb_cycle = current_cycle;
-    commonDataBus = instr_to_cdb;
-    freeRS(instr_to_cdb);
-    freeFU(instr_to_cdb);
+  if (oldest_instr && !commonDataBus) {
+    oldest_instr->tom_cdb_cycle = current_cycle;
+    freeRS(oldest_instr);
+    freeFU(oldest_instr);
   }
   /* ECE552 Assignment 3 - END CODE */
 }
+
 
 /* 
  * Description: 
@@ -266,89 +275,60 @@ void execute_To_CDB(int current_cycle) {
  *      (in program order) over new ones, if they both contend for the same functional unit.
  *      All RAW dependences need to have been resolved with stalls before an instruction enters execute.
  * Inputs:
- * 	current_cycle: the cycle we are at
- * Returns:
+ * 	curren cycle we are at
+ * Returns
  * 	None
  */
 void issue_To_execute(int current_cycle) {
   /* ECE552 Assignment 3 - BEGIN CODE */
 
+  /* *********************************
+   * Issue to Execute
+   * - Iterate through reservation station entries
+   *    - Check if dependent instr value ready
+   *    - Check if functional unit avaliable
+   *    - Update FU entry and set cycle
+   * *********************************/
+
   // Check int entries
-  for (unsigned rs_index = 0; rs_index < RESERV_INT_SIZE; rs_index++) {
-    instruction_t *cur_instr = reservINT[rs_index];
-    // First, check if dependent instructions are all ready      
-    bool input_ready = true;
-    instruction_t *depend_instr;
-    for (unsigned q_index = 0; q_index < 3; q_index++) {
-      depend_instr = cur_instr->Q[q_index];
-
-      // Break the for loop if any of the dependent instr not ready
-      if (depend_instr->tom_cdb_cycle > 0) {
-        input_ready = true;
-        break;
-      }
-    }
+  for (unsigned loop_index = 0; loop_index < 2; loop_index++) {
+    unsigned rs_size = loop_index ? RESERV_INT_SIZE : RESERV_FP_SIZE;
+    instruction_t **resrev = loop_index ? reservINT : reservFP;
     
-    // Catch the break, skip the current processing instruction
-    // and proceed to the next in instruction queue
-    if (!input_ready)
-      continue;
+    unsigned fu_size = loop_index ? FU_INT_SIZE : FU_FP_SIZE;
+    instruction_t **fu = loop_index ? fuINT : fuFP;
 
-    // Second, check if there are function units avaliable
-    unsigned int fu_size;
-    instruction_t **cur_fu_ptr;
-    if (USES_INT_FU(cur_instr->op)) {
-      fu_size = FU_INT_SIZE;
-      cur_fu_ptr = fuINT;
-    } else if (USES_FP_FU(cur_instr->op)) {
-      fu_size = FU_FP_SIZE;
-      cur_fu_ptr = fuFP;
-    }
-    for (unsigned fu_index=0; index < fu_size; fu_index++) {
-      if (cur_fu_ptr[fu_index]->tom_cdb_cycle > 0 && cur_fu_ptr[fu_index]->tom_cdb_cycle < current_cycle) {
-        // Reassign function unit
-        cur_fu_ptr[fu_index] = cur_instr;
-        cur_instr->tom_execute_cycle = current_cycle;
+    for (unsigned rs_index = 0; rs_index < rs_size; rs_index++) {
+      instruction_t *cur_instr = resrev[rs_index];
+
+      if (!cur_instr) continue;
+
+      // 1. Check if dependent instr value ready
+      bool input_ready = true;
+      instruction_t *depend_instr;
+      for (unsigned q_index = 0; q_index < 3; q_index++) {
+        depend_instr = cur_instr->Q[q_index];
+
+        if (!depend_instr) continue;
+        
+        if (!depend_instr->tom_cdb_cycle || depend_instr->tom_cdb_cycle < current_cycle) {
+          input_ready = false;
+          break;
+        }
       }
-    }
-  }
+      
+      // Catch the break, skip the current processing instruction
+      // and proceed to the next rs in rs station
+      if (!input_ready) continue;
 
-  for (unsigned rs_index = 0; rs_index < RESERV_FP_SIZE; rs_index++) {
-    instruction_t *cur_instr = reservFP[rs_index];
+      // 2. Check if there are function units avaliable
+      for (unsigned fu_index = 0; fu_index < fu_size; fu_index++) {
+        if (!fu[fu_index]) {
+          // Reassign function unit
+          cur_instr->tom_execute_cycle = current_cycle;
 
-    // First, check if dependent instructions are all ready      
-    bool input_ready = true;
-    instruction_t *depend_instr;
-    for (unsigned q_index = 0; q_index < 3; q_index++) {
-      depend_instr = cur_instr->Q[q_index];
-
-      // Break the for loop if any of the dependent instr not ready
-      if (depend_instr->tom_cdb_cycle > 0) {
-        input_ready = true;
-        break;
-      }
-    }
-    
-    // Catch the break, skip the current processing instruction
-    // and proceed to the next in instruction queue
-    if (!input_ready)
-      continue;
-
-    // Second, check if there are function units avaliable
-    unsigned int fu_size;
-    instruction_t **cur_fu_ptr;
-    if (USES_INT_FU(cur_instr->op)) {
-      fu_size = FU_INT_SIZE;
-      cur_fu_ptr = fuINT;
-    } else if (USES_FP_FU(cur_instr->op)) {
-      fu_size = FU_FP_SIZE;
-      cur_fu_ptr = fuFP;
-    }
-    for (unsigned fu_index=0; index < fu_size; fu_index++) {
-      if (cur_fu_ptr[fu_index]->tom_cdb_cycle > 0 && cur_fu_ptr[fu_index]->tom_cdb_cycle < current_cycle) {
-        // Reassign function unit
-        cur_fu_ptr[fu_index] = cur_instr;
-        cur_instr->tom_execute_cycle = current_cycle;
+          fu[fu_index] = cur_instr;
+        }
       }
     }
   }
@@ -365,51 +345,41 @@ void issue_To_execute(int current_cycle) {
  */
 void dispatch_To_issue(int current_cycle) {
   /* ECE552 Assignment 3 - BEGIN CODE */
-  // for (int i = 0; i < RESERV_INT_SIZE; i++) {
-  //   if (reservINT[i] && reservINT[i]->tom_issue_cycle == -1) {
-  //     reservINT[i]->tom_issue_cycle = current_cycle;
-  //   }
-  // }
-
-  // for (int i = 0; i < RESERV_FP_SIZE; i++) {
-  //   if (reservFP[i] && reservFP[i]->tom_issue_cycle == -1) {
-  //     reservFP[i]->tom_issue_cycle = current_cycle;
-  //   }
-  // }
 
   /* *********************************
-   * Fetch to Dispatch
+   * Dispatch to Issue
    * 1. Find an avaliable RS entry, stall otherwise (if needed)
    * 2. Register on map table
    * 3. Update Q
    * 4. Remove instr from 
    * *********************************/
-  instruction_t **rs_entry_ptr = NULL;
+  if (!instr_queue_head) return;
+  
+  instruction_t *cur_instr = instr_queue_head->instr;
+  
+  assert(cur_instr);
 
-  // 
+  // Update reservation station entry
   if (USES_INT_FU(cur_instr->op)) {
     for (int i = 0; i < RESERV_INT_SIZE; i++) {
       if (!reservINT[i]) {
-        rs_entry_ptr = &reservINT[i];
+        reservINT[i] = cur_instr;
         break;
       }
     }
   } else if (USES_FP_FU(cur_instr->op)) {
     for (int i = 0; i < RESERV_FP_SIZE; i++) {
       if (!reservFP[i]) {
-        rs_entry_ptr = &reservFP[i];
+        reservFP[i] = cur_instr;
         break;
       }
     }
   } 
-  
-  // Update reservation station entry
-  (*rs_entry_ptr) = cur_instr;
 
   // 2. Register "out" on the map table
   for (int i = 0; i < 2; i++) {
-    if (cur_instr->r_out[i] != DNA) {
-      map_table[cur_instr->r_out[i]] = (*rs_entry_ptr);
+    if (cur_instr->r_out[i] != 0 && cur_instr->r_out[i] != DNA) {
+      map_table[cur_instr->r_out[i]] = cur_instr;
     }
   }
 
@@ -417,12 +387,14 @@ void dispatch_To_issue(int current_cycle) {
   for (int j = 0; j < 3; j++) {
     if (cur_instr->r_in[j] != 0 && cur_instr->r_in[j] != DNA) {
       cur_instr->Q[j] = map_table[cur_instr->r_in[j]];
+    } else {
+      cur_instr->Q[j] = NULL;
     }
-  }
-
+  } 
+  
   // 4. Remove from IFQ
   if (instr_queue_head != instr_queue_tail) {
-    instruction_t *temp = instr_queue_head;
+    instr_node *temp = instr_queue_head;
     instr_queue_head = instr_queue_head->next;
     free(temp);
   } else {
@@ -430,9 +402,9 @@ void dispatch_To_issue(int current_cycle) {
     instr_queue_tail = NULL;
     instr_queue_head = NULL;
   }
-
   instr_queue_size--;
 
+  cur_instr->tom_issue_cycle = current_cycle;
   /* ECE552 Assignment 3 - END CODE */
 }
 
@@ -450,18 +422,21 @@ void fetch(instruction_trace_t* trace) {
     // no space availble in IFQ
     return;
   }
-  
+
   instruction_t* new_instr_fetched;
   new_instr_fetched = get_instr(trace, fetch_index);
   fetch_index++;
 
-  if (new_instr_fetched && new_instr_fetched->op && !IS_TRAP(new_instr_fetched->op)) {
-    new_instr_fetched->tom_cdb_cycle      = 0;
-    new_instr_fetched->tom_dispatch_cycle = 0;
-    new_instr_fetched->tom_execute_cycle  = 0;
-    new_instr_fetched->tom_issue_cycle    = 0;
-    break;
+  // Skip all trap instruction
+  if (IS_TRAP(new_instr_fetched->op) || !new_instr_fetched) {
+    return;
   }
+
+  // Init cycle numbers
+  new_instr_fetched->tom_cdb_cycle      = 0;
+  new_instr_fetched->tom_dispatch_cycle = 0;
+  new_instr_fetched->tom_execute_cycle  = 0;
+  new_instr_fetched->tom_issue_cycle    = 0;
 
   // Init carrier for instruction and add to queue
   instr_node* new_node = (instr_node*)malloc(sizeof(instr_node));
@@ -480,45 +455,6 @@ void fetch(instruction_trace_t* trace) {
   /* ECE552 Assignment 3 - END CODE */
 }
 
-/* ECE552 Assignment 3 - BEGIN CODE */
-void update_maptable(instruction_t *rs) {
-  for (int i = 0; i < 2; i++) {
-    if (rs->r_out[i] != DNA) {
-      map_table[rs->r_out[i]] = rs;
-    }
-  }
-}
-
-void pop_ifq() {
-  if (instr_queue_head != instr_queue_tail) {
-    instruction_t *temp = instr_queue_head;
-    instr_queue_head = instr_queue_head->next;
-    free(temp);
-  } else {
-    free(instr_queue_head);
-    instr_queue_tail = NULL;
-    instr_queue_head = NULL;
-  }
-
-  instr_queue_size--;
-}
-
-void update_rs(instruction_t *rs, instruction_t *instr) {
-  rs = instr;
-  for (int j = 0; j < 3; j++) {
-    if (rs->r_in[j] != 0 && rs->r_in[j] != DNA) {
-      rs->Q[j] = map_table[rs->r_in[j]];
-    }
-  }
-}
-
-void dispatch(instruction_t *rs, instruction_t *instr) {
-  update_rs(rs, instr);
-  update_maptable(rs);
-  pop_ifq();
-}
-/* ECE552 Assignment 3 - END CODE */
-
 /* 
  * Description: 
  * 	Calls fetch and dispatches an instruction at the same cycle (if possible)
@@ -530,15 +466,14 @@ void dispatch(instruction_t *rs, instruction_t *instr) {
  */
 void fetch_To_dispatch(instruction_trace_t* trace, int current_cycle) {
   /* ECE552 Assignment 3 - BEGIN CODE */
+  if (fetch_index > sim_num_insn)
+    return;
   fetch(trace);
   instruction_t *cur_instr = instr_queue_head->instr;
 
   assert(cur_instr);
-  
 
-  else if (IS_COND_CTRL(instr_head->op) || IS_UNCOND_CTRL(instr_head->op)) {
-     pop_ifq(); 
-  }
+  cur_instr->tom_dispatch_cycle = current_cycle;
   /* ECE552 Assignment 3 - END CODE */
 }
 
@@ -585,11 +520,16 @@ counter_t runTomasulo(instruction_trace_t* trace)
   
   int cycle = 1;
   while (true) {
+    TRACE(("c2r\n"));
     CDB_To_retire(cycle);
+    TRACE(("e2c\n"));    
     execute_To_CDB(cycle);
+    TRACE(("i2e\n"));    
     issue_To_execute(cycle);
+    TRACE(("d2i\n"));    
     dispatch_To_issue(cycle);
-    fetch_To_dispatch(cycle);
+    TRACE(("f2d\n"));    
+    fetch_To_dispatch(trace, cycle);
 
     cycle++;
 
