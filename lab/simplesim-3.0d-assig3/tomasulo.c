@@ -114,7 +114,7 @@ static int fetch_index = 0;
 
 
 /* RESERVATION STATIONS */
-#define DEBUG 1
+#define DEBUG 0
 
 #define TRACE(x) do { if (DEBUG) dbg_printf x; } while (0)
 void dbg_printf(const char *fmt, ...)
@@ -142,6 +142,29 @@ static bool is_simulation_done(counter_t sim_insn) {
   
   unsigned index;
 
+  unsigned int rs_i, rs_f, fu_i, fu_f, cdb;
+
+  rs_i = 0;
+  for (index = 0; index < RESERV_INT_SIZE; index++) {
+    if (reservINT[index]) rs_i++;
+  }
+  rs_f = 0;
+  for (index = 0; index < RESERV_FP_SIZE; index++) {
+    if (reservFP[index]) rs_f++;
+  }
+  fu_i = 0;
+  for (index = 0; index < FU_INT_SIZE; index++) {
+    if (fuINT[index]) fu_i++;
+  }
+  fu_f = 0;
+  for (index = 0; index < FU_FP_SIZE; index++) {
+    if (fuFP[index]) fu_f++;
+  }
+  cdb = 0;
+  if (commonDataBus) cdb++;
+
+  TRACE(("\nrs_i: %d, rs_f: %d, fu_i: %d, fu_f: %d, cdb: %d\n", rs_i, rs_f, fu_i, fu_f, cdb));
+
   for (index = 0; index < RESERV_INT_SIZE; index++) {
     if (reservINT[index]) return false;
   }
@@ -159,7 +182,6 @@ static bool is_simulation_done(counter_t sim_insn) {
   }
 
   if (commonDataBus) return false;
-
   return true;
   /* ECE552 Assignment 3 - END CODE */
 }
@@ -174,7 +196,7 @@ static bool is_simulation_done(counter_t sim_insn) {
  */
 void CDB_To_retire(int current_cycle) {
   /* ECE552 Assignment 3 - BEGIN CODE */
-  if (commonDataBus && commonDataBus->tom_cdb_cycle < current_cycle) {
+  if (commonDataBus && (commonDataBus->tom_cdb_cycle) < current_cycle) {
     commonDataBus = NULL;
   }
   /* ECE552 Assignment 3 - END CODE */
@@ -240,19 +262,20 @@ void execute_To_CDB(int current_cycle) {
   instruction_t *oldest_instr = NULL;
 
   for (unsigned loop_index = 0; loop_index < 2; loop_index++) {
-    instruction_t **fu = loop_index ? fuINT : fuFP;
-    unsigned fu_size = loop_index ? FU_INT_SIZE : FU_FP_SIZE;
-    unsigned fu_latency = loop_index ? FU_INT_LATENCY : FU_FP_LATENCY;
+    instruction_t **fu = loop_index ? fuFP : fuINT;
+    unsigned fu_size = loop_index ? FU_FP_SIZE : FU_INT_SIZE;
+    unsigned fu_latency = loop_index ? FU_FP_LATENCY : FU_INT_LATENCY;
 
     for (unsigned index = 0; index < fu_size; index++) {
       // Continue to next entry if execution is not done
       if (!fu[index]) continue;
-      if (fu[index]->tom_execute_cycle + fu_latency >= current_cycle) continue;
+      if (fu[index]->tom_execute_cycle + fu_latency > current_cycle) continue;
 
       if (!WRITES_CDB(fu[index]->op)) {
-        fu[index]->tom_cdb_cycle = 0;       // Instruction does not broadcase, set CDB cycle to 0
-        fu[index] = NULL;                   // Free functional unit
+        fu[index]->tom_cdb_cycle = 0;       // Instruction does not broadcast, set CDB cycle to 0
         freeRS(fu[index]);                  // Free Reservation station
+        fu[index] = NULL;                   // Free functional unit
+        continue;
       } 
 
       if (!oldest_instr || fu[index]->index < oldest_instr->index)
@@ -262,6 +285,7 @@ void execute_To_CDB(int current_cycle) {
 
   if (oldest_instr && !commonDataBus) {
     oldest_instr->tom_cdb_cycle = current_cycle;
+    commonDataBus = oldest_instr;
     freeRS(oldest_instr);
     freeFU(oldest_instr);
   }
@@ -292,17 +316,18 @@ void issue_To_execute(int current_cycle) {
 
   // Check int entries
   for (unsigned loop_index = 0; loop_index < 2; loop_index++) {
-    unsigned rs_size = loop_index ? RESERV_INT_SIZE : RESERV_FP_SIZE;
-    instruction_t **resrev = loop_index ? reservINT : reservFP;
+    unsigned rs_size = loop_index ? RESERV_FP_SIZE : RESERV_INT_SIZE;
+    instruction_t **resrev = loop_index ? reservFP : reservINT;
     
-    unsigned fu_size = loop_index ? FU_INT_SIZE : FU_FP_SIZE;
-    instruction_t **fu = loop_index ? fuINT : fuFP;
+    unsigned fu_size = loop_index ? FU_FP_SIZE : FU_INT_SIZE;
+    instruction_t **fu = loop_index ? fuFP : fuINT;
 
     for (unsigned rs_index = 0; rs_index < rs_size; rs_index++) {
       instruction_t *cur_instr = resrev[rs_index];
 
       if (!cur_instr) continue;
 
+      if (cur_instr->tom_execute_cycle) continue;
       // 1. Check if dependent instr value ready
       bool input_ready = true;
       instruction_t *depend_instr;
@@ -310,13 +335,17 @@ void issue_To_execute(int current_cycle) {
         depend_instr = cur_instr->Q[q_index];
 
         if (!depend_instr) continue;
-        
-        if (!depend_instr->tom_cdb_cycle || depend_instr->tom_cdb_cycle < current_cycle) {
+
+        // Skip dependent instruction that does 
+        if (!USES_INT_FU(depend_instr->op) && !USES_FP_FU(depend_instr->op)) 
+          continue;
+
+        if (!depend_instr->tom_cdb_cycle || (depend_instr->tom_cdb_cycle + 1) > current_cycle) {
           input_ready = false;
           break;
         }
       }
-      
+
       // Catch the break, skip the current processing instruction
       // and proceed to the next rs in rs station
       if (!input_ready) continue;
@@ -328,6 +357,7 @@ void issue_To_execute(int current_cycle) {
           cur_instr->tom_execute_cycle = current_cycle;
 
           fu[fu_index] = cur_instr;
+          break;
         }
       }
     }
@@ -359,11 +389,15 @@ void dispatch_To_issue(int current_cycle) {
   
   assert(cur_instr);
 
+  bool useRS = false;
+  bool gotRS = false;
   // Update reservation station entry
   if (USES_INT_FU(cur_instr->op)) {
+    useRS = true;
     for (int i = 0; i < RESERV_INT_SIZE; i++) {
       if (!reservINT[i]) {
         reservINT[i] = cur_instr;
+        gotRS = true;
         break;
       }
     }
@@ -371,26 +405,31 @@ void dispatch_To_issue(int current_cycle) {
     for (int i = 0; i < RESERV_FP_SIZE; i++) {
       if (!reservFP[i]) {
         reservFP[i] = cur_instr;
+        gotRS = true;
         break;
       }
     }
-  } 
-
-  // 2. Register "out" on the map table
-  for (int i = 0; i < 2; i++) {
-    if (cur_instr->r_out[i] != 0 && cur_instr->r_out[i] != DNA) {
-      map_table[cur_instr->r_out[i]] = cur_instr;
-    }
   }
 
-  // 3. Update Q entries of the current instruction
-  for (int j = 0; j < 3; j++) {
-    if (cur_instr->r_in[j] != 0 && cur_instr->r_in[j] != DNA) {
-      cur_instr->Q[j] = map_table[cur_instr->r_in[j]];
-    } else {
-      cur_instr->Q[j] = NULL;
+  if (useRS && !gotRS) return;
+
+  // 2. Update Q entries of the current instruction
+  if (useRS) {
+    for (int j = 0; j < 3; j++) {
+      if (cur_instr->r_in[j] != 0 && cur_instr->r_in[j] != DNA) {
+        cur_instr->Q[j] = map_table[cur_instr->r_in[j]];
+      } else {
+        cur_instr->Q[j] = NULL;
+      }
+    } 
+
+    // 3. Register "out" on the map table
+    for (int i = 0; i < 2; i++) {
+      if (cur_instr->r_out[i] != 0 && cur_instr->r_out[i] != DNA) {
+        map_table[cur_instr->r_out[i]] = cur_instr;
+      }
     }
-  } 
+  }
   
   // 4. Remove from IFQ
   if (instr_queue_head != instr_queue_tail) {
@@ -418,19 +457,19 @@ void dispatch_To_issue(int current_cycle) {
  */
 void fetch(instruction_trace_t* trace) {
   /* ECE552 Assignment 3 - BEGIN CODE */
-  if (instr_queue_size >= INSTR_QUEUE_SIZE) {
-    // no space availble in IFQ
-    return;
-  }
 
+  if (fetch_index > sim_num_insn)
+    return;
+    
   instruction_t* new_instr_fetched;
-  new_instr_fetched = get_instr(trace, fetch_index);
-  fetch_index++;
+  do {
+    new_instr_fetched = get_instr(trace, fetch_index);
+    fetch_index++;
+  } while (new_instr_fetched->op == OP_NA || IS_TRAP(new_instr_fetched->op));
 
-  // Skip all trap instruction
-  if (IS_TRAP(new_instr_fetched->op) || !new_instr_fetched) {
-    return;
-  }
+  // if (!new_instr_fetched) {
+  //   return;
+  // }
 
   // Init cycle numbers
   new_instr_fetched->tom_cdb_cycle      = 0;
@@ -466,10 +505,16 @@ void fetch(instruction_trace_t* trace) {
  */
 void fetch_To_dispatch(instruction_trace_t* trace, int current_cycle) {
   /* ECE552 Assignment 3 - BEGIN CODE */
-  if (fetch_index > sim_num_insn)
+  if (instr_queue_size >= INSTR_QUEUE_SIZE) {
+    // no space availble in IFQ
     return;
+  }
+
   fetch(trace);
-  instruction_t *cur_instr = instr_queue_head->instr;
+
+  if (!instr_queue_head) return;
+
+  instruction_t *cur_instr = instr_queue_tail->instr;
 
   assert(cur_instr);
 
@@ -536,6 +581,6 @@ counter_t runTomasulo(instruction_trace_t* trace)
     if (is_simulation_done(sim_num_insn))
       break;
   }
-  
+  print_all_instr(trace, sim_num_insn);
   return cycle;
 }
