@@ -112,19 +112,10 @@ static instruction_t* map_table[MD_TOTAL_REGS];
 static int fetch_index = 0;
 
 /* FUNCTIONAL UNITS */
+static bool IFQ_POPED = false;
 
 
 /* RESERVATION STATIONS */
-#define DEBUG 0
-
-#define TRACE(x) do { if (DEBUG) dbg_printf x; } while (0)
-void dbg_printf(const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
-    va_end(args);
-}
 
 /* 
  * Description: 
@@ -159,6 +150,8 @@ static bool is_simulation_done(counter_t sim_insn) {
     if (fuFP[index]) return false;
   }
 
+  if (instr_queue_head) return false;
+
   if (commonDataBus) return false;
 
   return true;
@@ -180,6 +173,10 @@ void CDB_To_retire(int current_cycle) {
   }
   /* ECE552 Assignment 3 - END CODE */
 }
+
+
+
+
 
 /* ECE552 Assignment 3 - BEGIN CODE */
 void freeRS(instruction_t *instr) {
@@ -257,8 +254,9 @@ void execute_To_CDB(int current_cycle) {
         continue;
       } 
 
-      if (!oldest_instr || fu[index]->index < oldest_instr->index)
+      if (!oldest_instr || fu[index]->index < oldest_instr->index) {
         oldest_instr = fu[index];
+      }
     }
   }
 
@@ -367,6 +365,14 @@ void issue_To_execute(int current_cycle) {
       if (!instr_node_for_fu) break;
 
       if (!fu[fu_index]) {
+        if (fu == fuINT) {
+          if (!USES_INT_FU(instr_node_for_fu->instr->op))
+            assert(0);
+        }
+        else if (fu == fuFP) {
+          if (!USES_FP_FU(instr_node_for_fu->instr->op))
+            assert(0);
+        }
         // Reassign function unit
         instr_node_for_fu->instr->tom_execute_cycle = current_cycle;
 
@@ -374,15 +380,6 @@ void issue_To_execute(int current_cycle) {
         instr_node_for_fu = instr_node_for_fu->next;
       }
     }
-
-    // int index = 0;
-    // instr_node *cur_node = ordered_ready_instr_chain;
-    // while (cur_node) {
-    //   if (cur_node->instr->index < index)
-    //     assert(0);
-    //   index = cur_node->instr->index;
-    //   cur_node = cur_node->next;
-    // }
 
     // Free ordered instruction chain
     instr_node *cur_node = ordered_ready_instr_chain;
@@ -432,6 +429,7 @@ void dispatch_To_issue(int current_cycle) {
       }
     }
   } else if (USES_FP_FU(cur_instr->op)) {
+    useRS = true;
     for (int i = 0; i < RESERV_FP_SIZE; i++) {
       if (!reservFP[i]) {
         reservFP[i] = cur_instr;
@@ -451,7 +449,7 @@ void dispatch_To_issue(int current_cycle) {
       } else {
         cur_instr->Q[j] = NULL;
       }
-    } 
+    }
 
     // 3. Register "out" on the map table
     for (int i = 0; i < 2; i++) {
@@ -465,13 +463,15 @@ void dispatch_To_issue(int current_cycle) {
   if (instr_queue_head != instr_queue_tail) {
     instr_node *temp = instr_queue_head;
     instr_queue_head = instr_queue_head->next;
+    instr_queue_head->prev = NULL;
     free(temp);
   } else {
     free(instr_queue_head);
     instr_queue_tail = NULL;
     instr_queue_head = NULL;
   }
-  instr_queue_size--;
+
+  IFQ_POPED = true;
 
   cur_instr->tom_issue_cycle = current_cycle;
   /* ECE552 Assignment 3 - END CODE */
@@ -492,11 +492,8 @@ void fetch(instruction_trace_t* trace) {
   do {
     new_instr_fetched = get_instr(trace, fetch_index);
     fetch_index++;
-  } while (new_instr_fetched->op == OP_NA);
+  } while (new_instr_fetched->op == OP_NA || IS_TRAP(new_instr_fetched->op));
 
-  if (IS_TRAP(new_instr_fetched->op)) {
-    return;
-  }
 
   // Init cycle numbers
   new_instr_fetched->tom_cdb_cycle      = 0;
@@ -508,12 +505,14 @@ void fetch(instruction_trace_t* trace) {
   instr_node* new_node = (instr_node*)malloc(sizeof(instr_node));
   new_node->instr = new_instr_fetched;
   new_node->next = NULL;
+  new_node->prev = NULL;
 
   if (!instr_queue_head) {
     instr_queue_head = new_node;
     instr_queue_tail = instr_queue_head;
   } else {
     instr_queue_tail->next = new_node;
+    new_node->prev = instr_queue_tail;
     instr_queue_tail = new_node;
   }
   
@@ -537,7 +536,6 @@ void fetch_To_dispatch(instruction_trace_t* trace, int current_cycle) {
     return;
   }
 
-  
   if (fetch_index > sim_num_insn)
     return;
 
@@ -596,9 +594,8 @@ counter_t runTomasulo(instruction_trace_t* trace)
   
   int cycle = 1;
   while (true) {
-    if (cycle == 145) {
-      printf("\n");
-    }
+    if (cycle == 17397)
+      printf(" ");
     CDB_To_retire(cycle);
     execute_To_CDB(cycle);
     issue_To_execute(cycle);
@@ -606,7 +603,11 @@ counter_t runTomasulo(instruction_trace_t* trace)
     fetch_To_dispatch(trace, cycle);
 
     cycle++;
-
+    if (IFQ_POPED) {
+      IFQ_POPED = false;
+      // printf("%d\n", cycle);
+      instr_queue_size --;
+    }
     if (is_simulation_done(sim_num_insn))
       break;
   }
