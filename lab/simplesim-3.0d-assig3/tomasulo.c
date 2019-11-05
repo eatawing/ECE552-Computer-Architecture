@@ -599,7 +599,6 @@ counter_t runTomasulo(instruction_trace_t* trace)
     dispatch_To_issue(cycle);
     fetch_To_dispatch(trace, cycle);
 
-    cycle++;
     if (IFQ_POPED) {
       IFQ_POPED = false;
 
@@ -608,6 +607,8 @@ counter_t runTomasulo(instruction_trace_t* trace)
 
     if (is_simulation_done(sim_num_insn))
       break;
+
+    cycle++;
   }
 
   // print_all_instr(trace, sim_num_insn);
