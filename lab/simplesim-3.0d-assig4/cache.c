@@ -505,9 +505,22 @@ cache_reg_stats(struct cache_t *cp,	/* cache instance */
 
 }
 
+#define C
 /* Next Line Prefetcher */
 void next_line_prefetcher(struct cache_t *cp, md_addr_t addr) {
-	; 
+  /* ECE552 Assignment 4 - BEGIN CODE */
+
+  /* Addr of the next line */
+  md_addr_t next_addr = addr + cp->bsize;
+
+  /* Align the addr to block */
+  md_addr_t tag = CACHE_TAG(cp, next_addr);
+  md_addr_t set = CACHE_SET(cp, next_addr);
+  md_addr_t next_blk_addr = CACHE_MK_BADDR(cp, tag, set);
+
+  cache_access(cp, Read, next_blk_addr, NULL, cp->bsize, 0, NULL, NULL, 1);
+
+  /* ECE552 Assignment 4 - END CODE */
 }
 
 /* Open Ended Prefetcher */
@@ -569,16 +582,16 @@ cache_stats(struct cache_t *cp,		/* cache instance */
    at NOW, places pointer to block user data in *UDATA, *P is untouched if
    cache blocks are not allocated (!CP->BALLOC), UDATA should be NULL if no
    user data is attached to blocks */
-unsigned int				/* latency of access in cycles */
+unsigned int				              /* latency of access in cycles */
 cache_access(struct cache_t *cp,	/* cache to access */
-	     enum mem_cmd cmd,		/* access type, Read or Write */
-	     md_addr_t addr,		/* address of access */
-	     void *vp,			/* ptr to buffer for input/output */
-	     int nbytes,		/* number of bytes to access */
-	     tick_t now,		/* time of access */
-	     byte_t **udata,		/* for return of user data ptr */
-	     md_addr_t *repl_addr,	/* for address of replaced block */
-	     int prefetch)		/* 1 if the access is a prefetch, 0 if it is not */
+	     enum mem_cmd cmd,		      /* access type, Read or Write */
+	     md_addr_t addr,		        /* address of access */
+	     void *vp,			            /* ptr to buffer for input/output */
+	     int nbytes,		            /* number of bytes to access */
+	     tick_t now,		            /* time of access */
+	     byte_t **udata,		        /* for return of user data ptr */
+	     md_addr_t *repl_addr,	    /* for address of replaced block */
+	     int prefetch)		          /* 1 if the access is a prefetch, 0 if it is not */
 {
   byte_t *p = vp;
   md_addr_t tag = CACHE_TAG(cp, addr);
