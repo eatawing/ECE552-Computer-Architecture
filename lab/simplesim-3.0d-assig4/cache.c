@@ -554,9 +554,9 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
 /* Stride Prefetcher */
 void stride_prefetcher(struct cache_t *cp, md_addr_t addr) {
   /* ECE552 Assignment 4 - BEGIN CODE */
-  md_addr_t pc = get_PC();
-  md_addr_t index = (pc >> 3) % cp->prefetch_type;
-  md_addr_t tag = pc >> 7;
+
+  md_addr_t index = (get_PC() >> 3) % cp->prefetch_type;
+  md_addr_t tag = get_PC() >> 7;
   
   struct rpt_entry_t * entry = &(cp->rpt[index]);
 
@@ -604,7 +604,7 @@ void stride_prefetcher(struct cache_t *cp, md_addr_t addr) {
   }
 
   /* Do nothing if state is "no-prediction */
-  if (cp->state == NO_PREDICTION) return; 
+  if (entry->state == NO_PREDICTION) return; 
 
   /* Addr of the next line */
   md_addr_t next_addr = addr + entry->stride;
@@ -642,7 +642,6 @@ void generate_prefetch(struct cache_t *cp, md_addr_t addr) {
 
 }
 
-md_addr_t get_PC();
 
 /* print cache stats */
 void
