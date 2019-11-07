@@ -610,7 +610,7 @@ void stride_prefetcher(struct cache_t *cp, md_addr_t addr) {
   md_addr_t next_addr = addr + entry->stride;
 
   /* Align the addr to block */
-  md_addr_t tag = CACHE_TAG(cp, next_addr);
+  tag = CACHE_TAG(cp, next_addr);
   md_addr_t set = CACHE_SET(cp, next_addr);
   md_addr_t next_blk_addr = CACHE_MK_BADDR(cp, tag, set);
 
