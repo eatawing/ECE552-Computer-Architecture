@@ -139,6 +139,10 @@
 /* bound sqword_t/dfloat_t to positive int */
 #define BOUND_POS(N)		((int)(MIN(MAX(0, (N)), 2147483647)))
 
+/* ECE552 Assignment 4 - BEGIN CODE */
+#define NUM_RPT_ENTRY 
+/* ECE552 Assignment 4 - END CODE */
+
 /* unlink BLK from the hash table bucket chain in SET */
 static void
 unlink_htab_ent(struct cache_t *cp,		/* cache to update */
@@ -408,6 +412,25 @@ cache_create(char *name,		/* name of the cache */
 	    cp->sets[i].way_tail = blk;
 	}
     }
+
+  /* ECE552 Assignment 4 - BEGIN CODE */
+  /* Initialize RPT table */
+  if (prefetch_type < 3)
+    return cp;
+  
+  cp->rpt = calloc(cp->prefetch_type, sizeof(struct rpt_entry_t));
+
+  if (!cp->rpt) fatal("out of virtual memory");
+
+  for (size_t index = 0; index < cp->prefetch_type; index++) {
+    cp->rpt[index].tag = 0;
+    cp->rpt[index].stride = 0;
+    cp->rpt[index].prev_addr = 0;
+
+    cp->rpt[index].state = INITIAL;
+  }
+  /* ECE552 Assignment 4 - END CODE */
+
   return cp;
 }
 
@@ -530,7 +553,69 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
 
 /* Stride Prefetcher */
 void stride_prefetcher(struct cache_t *cp, md_addr_t addr) {
-	; 
+  /* ECE552 Assignment 4 - BEGIN CODE */
+  md_addr_t pc = get_PC();
+  md_addr_t index = (pc >> 3) % cp->prefetch_type;
+  md_addr_t tag = pc >> 7;
+  
+  struct rpt_entry_t * entry = &(cp->rpt[index]);
+
+  // Scenario 1
+  if (!entry->tag||(entry->tag != tag)) {
+    entry->state = INITIAL;
+    entry->prev_addr = addr;
+    entry->stride = 0;
+    entry->tag = tag;
+  }
+
+  // Scenario 2
+  md_addr_t new_stride = addr - entry->prev_addr;
+  if (new_stride == entry->stride) {
+    switch (entry->state) {
+      case INITIAL:
+        entry->state = STEADY;
+        break;
+      case TRANSIENT:
+        entry->state = STEADY;
+        break;
+      case NO_PREDICTION:
+        entry->state = TRANSIENT;
+      case STEADY:
+        break;
+      default:
+        fatal("Unexpected stride state\n");
+    }
+  } else {
+    switch (entry->state)
+    {
+      case INITIAL:
+        entry->state = TRANSIENT;
+        break;
+      case TRANSIENT:
+        entry->state = NO_PREDICTION;
+        break;
+      case STEADY:
+        entry->state = INITIAL;
+      case NO_PREDICTION:
+        break;
+      default:
+        fatal("Unexpected stride state\n");
+    }
+  }
+
+  /* Do nothing if state is "no-prediction */
+  if (cp->state == NO_PREDICTION) return; 
+
+  /* Addr of the next line */
+  md_addr_t next_addr = addr + entry->stride;
+
+  /* Align the addr to block */
+  md_addr_t tag = CACHE_TAG(cp, next_addr);
+  md_addr_t set = CACHE_SET(cp, next_addr);
+  md_addr_t next_blk_addr = CACHE_MK_BADDR(cp, tag, set);
+
+  cache_access(cp, Read, next_blk_addr, NULL, cp->bsize, 0, NULL, NULL, 1);
+  /* ECE552 Assignment 4 - END CODE */
 }
 
 

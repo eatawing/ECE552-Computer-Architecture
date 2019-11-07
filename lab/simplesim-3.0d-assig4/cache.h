@@ -146,6 +146,23 @@ struct cache_set_t
 				   access to cache blocks */
 };
 
+/* ECE552 Assignment 4 - BEGIN CODE */
+/* state variable defiend for prefetching */
+enum RPT_STATE 
+{
+  INITIAL=1, TRANSIENT, STEADY, NO_PREDICTION
+};
+
+/* structure for stride prefetching machanism */
+struct rpt_entry_t 
+{
+  md_addr_t tag;
+  md_addr_t prev_addr;
+  md_addr_t stride;
+  enum RPT_STATE state;
+};
+/* ECE552 Assignment 4 - END CODE */
+
 /* cache definition */
 struct cache_t
 {
@@ -218,6 +235,13 @@ struct cache_t
 
   /* data blocks */
   byte_t *data;			/* pointer to data blocks allocation */
+
+
+  /* ECE552 Assignment 4 - BEGIN CODE */
+  /* RPT table pointer for stride prefetcher */
+  struct rpt_entry_t *rpt;
+  /* ECE552 Assignment 4 - END CODE */
+
 
   /* NOTE: this is a variable-size tail array, this must be the LAST field
      defined in this structure! */
