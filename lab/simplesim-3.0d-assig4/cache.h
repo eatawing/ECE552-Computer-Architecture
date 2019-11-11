@@ -161,6 +161,20 @@ struct rpt_entry_t
   md_addr_t stride;
   enum RPT_STATE state;
 };
+
+struct it_entry_t
+{
+  void *index_addr;
+  md_addr_t tag;
+};
+
+struct ghb_entry_t
+{
+  struct ghb_entry_t *prev;
+
+  md_addr_t addr;
+};
+
 /* ECE552 Assignment 4 - END CODE */
 
 /* cache definition */
@@ -240,6 +254,11 @@ struct cache_t
   /* ECE552 Assignment 4 - BEGIN CODE */
   /* RPT table pointer for stride prefetcher */
   struct rpt_entry_t *rpt;
+
+  struct it_entry_t *it;
+  struct ghb_entry_t *ghb;
+
+  void *ghb_head;
   /* ECE552 Assignment 4 - END CODE */
 
 

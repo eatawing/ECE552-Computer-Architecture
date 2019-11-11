@@ -58,6 +58,22 @@
 #include "machine.h"
 #include "cache.h"
 
+/* ECE552 Assignment 4 - BEGIN CODE */
+#include <stdint.h>
+
+#define CZONE_SZ  4096
+#define INDEX_TABLE_SZ 32
+#define GLOBAL_HISTORY_BUFFER_SZ 512
+#define ADDR_TO_CDC_TAG(addr) ((intptr_t)addr & ~((1 << (log_base2(CZONE_SZ))) - 1))
+#define GHB_INDEX_TO_HEAD(head, index) (void *)(((intptr_t)head & ~(GLOBAL_HISTORY_BUFFER_SZ-1)) + index)
+#define GHB_HEAD_TO_INDEX(head) ((intptr_t)head & (GLOBAL_HISTORY_BUFFER_SZ - 1))
+#define GHB_HEAD_INC(head)  (void *)((GHB_HEAD_TO_INDEX(head) == GLOBAL_HISTORY_BUFFER_SZ)  ?         \
+                            (intptr_t)head << log_base2(GLOBAL_HISTORY_BUFFER_SZ)           :         \
+                            (head + 1))
+#define INDEX_DECR(index) (index == 0) ? (GLOBAL_HISTORY_BUFFER_SZ - 1) : (index - 1)
+#define INDEX_INCR(index) (index == (GLOBAL_HISTORY_BUFFER_SZ - 1)) ? 0 : (index + 1)            
+/* ECE552 Assignment 4 - END CODE */
+
 /* cache access macros */
 #define CACHE_TAG(cp, addr)	((addr) >> (cp)->tag_shift)
 #define CACHE_SET(cp, addr)	(((addr) >> (cp)->set_shift) & (cp)->set_mask)
@@ -414,6 +430,27 @@ cache_create(char *name,		/* name of the cache */
     }
 
   /* ECE552 Assignment 4 - BEGIN CODE */
+  /* Initialize Index Table & Global History Buffer */
+  if (prefetch_type == 2) {
+    cp->it = calloc(INDEX_TABLE_SZ, sizeof(struct it_entry_t));
+    cp->ghb = calloc(GLOBAL_HISTORY_BUFFER_SZ, sizeof(struct ghb_entry_t));
+
+    for (size_t index = 0; index < INDEX_TABLE_SZ; index++ ) {
+      cp->it[index].tag = 0;
+      cp->it[index].index_addr = NULL;
+    }
+
+    for (size_t index = 0; index < GLOBAL_HISTORY_BUFFER_SZ; index++ ) {
+      cp->ghb[index].prev = NULL;
+      cp->ghb[index].addr = NULL;
+    }
+
+    assert(cp->it);
+    assert(cp->ghb);
+
+    cp->ghb_head = NULL;
+  }
+
   /* Initialize RPT table */
   if (prefetch_type < 3)
     return cp;
@@ -541,22 +578,148 @@ void next_line_prefetcher(struct cache_t *cp, md_addr_t addr) {
   md_addr_t set = CACHE_SET(cp, next_addr);
   md_addr_t next_blk_addr = CACHE_MK_BADDR(cp, tag, set);
 
-  cache_access(cp, Read, next_blk_addr, NULL, cp->bsize, 0, NULL, NULL, 1);
+  if (cache_probe(cp, next_blk_addr)) return;
 
+  cache_access(cp, Read, next_blk_addr, NULL, cp->bsize, 0, NULL, NULL, 1);
   /* ECE552 Assignment 4 - END CODE */
 }
 
 /* Open Ended Prefetcher */
 void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
-	; 
+  /* ECE552 Assignment 4 - BEGIN CODE */
+  /* Check for existing entry in Index Table */
+  md_addr_t cdc_tag = ADDR_TO_CDC_TAG(addr);
+  md_addr_t index = (addr >> log_base2(CZONE_SZ)) % INDEX_TABLE_SZ;
+
+  md_addr_t next_blk_addr;
+
+  unsigned it_entry_valid = 0;
+
+  struct ghb_entry_t *prefetch_candidate = NULL;
+
+  /* Index table hit */
+  if (cp->it[index].tag == cdc_tag) {
+    void *index_addr = cp->it[index].index_addr;
+    /* Check invaliadity of entry */
+    if (abs((intptr_t)index_addr - (intptr_t)cp->ghb_head) <= GLOBAL_HISTORY_BUFFER_SZ) {
+      it_entry_valid = 1;
+
+      size_t ghb_index = GHB_HEAD_TO_INDEX(index_addr);
+
+      prefetch_candidate = (struct ghb_entry_t *)(cp->ghb + ghb_index);
+    }
+  }
+
+  /* Index table miss */
+  if (!it_entry_valid) {
+    cp->it[index].tag = cdc_tag;
+    cp->it[index].index_addr = NULL;
+
+    /* Entry look-up in GHB */
+    unsigned cur_index = GHB_HEAD_TO_INDEX(cp->ghb_head);
+    unsigned head_index = cur_index;
+    do {
+      if (ADDR_TO_CDC_TAG(cp->ghb[cur_index].addr) == cdc_tag) {
+        cp->it[index].index_addr = GHB_INDEX_TO_HEAD(cp->ghb_head, cur_index);
+
+        prefetch_candidate = &cp->ghb[cur_index];
+        break;
+      }
+      cur_index = INDEX_DECR(cur_index);
+    } while (cur_index != head_index);
+  }
+
+  /* If no matching history found, do not prefetch */
+  if (!prefetch_candidate) {
+    return;
+  }
+
+  /* Construct delta buffer */
+  int delta_buffer[16] = {-1};
+  int buf_ind = 0;
+
+  size_t prev_index;
+  struct ghb_entry_t *prev_candidate;
+
+  md_addr_t prev_miss_addr;
+  for(;buf_ind < 16;buf_ind++) {
+    if (!prefetch_candidate->prev) break;
+
+    prev_index = GHB_HEAD_TO_INDEX(prefetch_candidate->prev);
+
+    prev_miss_addr = cp->ghb[prev_index].addr;
+
+    delta_buffer[buf_ind] = prefetch_candidate->addr - prev_miss_addr;
+
+    prefetch_candidate = &(cp->ghb[prev_index]);
+  }
+  
+  /* Do not prefetch if history apperance less than 5 */
+  if (buf_ind < 2) {
+    return;
+  } 
+
+  unsigned found = 0;
+  int delta = 0;
+  
+  for (size_t cur_ind = 3; cur_ind < buf_ind; cur_ind++) {
+    if (delta_buffer[0] == delta_buffer[cur_ind - 1] && 
+        delta_buffer[1] == delta_buffer[cur_ind]) {
+      delta = delta_buffer[cur_ind - 2];
+      found = 1;
+      break;
+    }
+    // if (delta_buffer[0] == delta_buffer[cur_ind]) {
+    //   delta = delta_buffer[cur_ind - 1];
+    //   found = 1;
+    //   break;
+    // }
+  }
+
+  if (!found) return;
+
+  md_addr_t next_addr = addr + delta;
+
+  /* Align the addr to block */
+  md_addr_t tag = CACHE_TAG(cp, next_addr);
+  md_addr_t set = CACHE_SET(cp, next_addr);
+  next_blk_addr = CACHE_MK_BADDR(cp, tag, set);
+
+  if (cache_probe(cp, next_blk_addr)) return;
+
+  cache_access(cp, Read, next_blk_addr, NULL, cp->bsize, 0, NULL, NULL, 1);
+  return;
+
+  /* ECE552 Assignment 4 - END CODE */
 }
+
+/* ECE552 Assignment 4 - BEGIN CODE */
+void print_ghb(struct cache_t *cp) {
+  printf("Index Table:\n");
+  for (int i=0;i<INDEX_TABLE_SZ;i++) {
+    printf("%d\t%p\t%p:%d\n", i, cp->it[i].tag, cp->it[i].index_addr, GHB_HEAD_TO_INDEX(cp->it[i].index_addr));
+  }
+  printf("GHB ---- Head: %p, pos: %d\n", cp->ghb_head, GHB_HEAD_TO_INDEX(cp->ghb_head));
+  printf("index\tprev\taddr\tCDC tag\n");
+  for (int i=0;i<GLOBAL_HISTORY_BUFFER_SZ;i++) {
+    int prev;
+    if (abs((intptr_t)cp->ghb[i].prev - (intptr_t)cp->ghb_head) <= GLOBAL_HISTORY_BUFFER_SZ)
+      prev = GHB_HEAD_TO_INDEX(cp->ghb[i].prev);
+    else
+      prev = -1;
+    printf("%d\t%p:%d\t%p\t%p\n", i, cp->ghb[i].prev, prev, cp->ghb[i].addr, ADDR_TO_CDC_TAG(cp->ghb[i].addr));
+  }
+}
+/* ECE552 Assignment 4 - END CODE */
+
+
 
 /* Stride Prefetcher */
 void stride_prefetcher(struct cache_t *cp, md_addr_t addr) {
   /* ECE552 Assignment 4 - BEGIN CODE */
 
-  md_addr_t index = (get_PC() >> 3) % cp->prefetch_type;
-  md_addr_t tag = get_PC() >> 7;
+  md_addr_t index = (get_PC() >> 2) % cp->prefetch_type;
+  md_addr_t tag = get_PC() >> (log_base2(cp->prefetch_type) + 2);
   
   struct rpt_entry_t * entry = &(cp->rpt[index]);
 
@@ -566,6 +729,7 @@ void stride_prefetcher(struct cache_t *cp, md_addr_t addr) {
     entry->prev_addr = addr;
     entry->stride = 0;
     entry->tag = tag;
+    return;
   }
 
   // Scenario 2
@@ -590,19 +754,25 @@ void stride_prefetcher(struct cache_t *cp, md_addr_t addr) {
     {
       case INITIAL:
         entry->state = TRANSIENT;
+        entry->stride = new_stride;
         break;
       case TRANSIENT:
         entry->state = NO_PREDICTION;
+        entry->stride = new_stride;
         break;
       case STEADY:
         entry->state = INITIAL;
+        break;
       case NO_PREDICTION:
+        entry->stride = new_stride;
         break;
       default:
         fatal("Unexpected stride state\n");
     }
   }
 
+  entry->prev_addr = addr;
+  
   /* Do nothing if state is "no-prediction */
   if (entry->state == NO_PREDICTION) return; 
 
@@ -613,6 +783,8 @@ void stride_prefetcher(struct cache_t *cp, md_addr_t addr) {
   tag = CACHE_TAG(cp, next_addr);
   md_addr_t set = CACHE_SET(cp, next_addr);
   md_addr_t next_blk_addr = CACHE_MK_BADDR(cp, tag, set);
+
+  if (cache_probe(cp, next_blk_addr)) return;
 
   cache_access(cp, Read, next_blk_addr, NULL, cp->bsize, 0, NULL, NULL, 1);
   /* ECE552 Assignment 4 - END CODE */
@@ -737,17 +909,42 @@ cache_access(struct cache_t *cp,	/* cache to access */
 
   /* **MISS** */
   if (prefetch == 0 ) {
+    cp->misses++;
+    if (cmd == Read) {	
+	    cp->read_misses++;
+    }
+    /* ECE552 Assignment 4 - BEGIN CODE */
+    if (cp->ghb) {
+      /* In case of cache miss (prefetch or fetch), update GHB */
+    
+      size_t ghb_index = GHB_HEAD_TO_INDEX(cp->ghb_head);
+      size_t prev_index = INDEX_DECR(ghb_index);
 
-     cp->misses++;
+      /* Only stores the tag as the identifier */
+      cp->ghb[ghb_index].addr = addr;
+      cp->ghb[ghb_index].prev = NULL;
+      while (prev_index != ghb_index) {
+        // if (!cp->ghb[prev_index].addr) break;
+        if (ADDR_TO_CDC_TAG(cp->ghb[ghb_index].addr) == ADDR_TO_CDC_TAG(cp->ghb[prev_index].addr)) {
+          cp->ghb[ghb_index].prev = GHB_INDEX_TO_HEAD(cp->ghb_head, prev_index);
+          // print_ghb(cp);
+          break;
+        }
+        prev_index = INDEX_DECR(prev_index);
+      }
 
-     if (cmd == Read) {	
-	cp->read_misses++;
-     }
+      for (size_t cur_index = 0; cur_index < GLOBAL_HISTORY_BUFFER_SZ; cur_index++) {
+        if (GHB_HEAD_TO_INDEX(cp->ghb[cur_index].prev) == ghb_index) {
+          cp->ghb[cur_index].prev = NULL;
+        }
+      }
+      cp->ghb_head = GHB_HEAD_INC(cp->ghb_head);
+    }
+    /* ECE552 Assignment 4 - END CODE */
   }
   else {
-     cp->prefetch_misses++;
+     cp->prefetch_misses++;     
   }
-
 
   /* select the appropriate block to replace, and re-link this entry to
      the appropriate place in the way list */
@@ -831,6 +1028,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
   if (cp->hsize)
     link_htab_ent(cp, &cp->sets[set], repl);
 
+
   if (prefetch == 0) {	/* only regular cache accesses can generate a prefetch */
   	generate_prefetch(cp, addr);
   }
@@ -885,7 +1083,6 @@ cache_access(struct cache_t *cp,	/* cache to access */
   if (prefetch == 0) {	/* only regular cache accesses can generate a prefetch */
 	generate_prefetch(cp, addr);
   }
-
 
   /* return first cycle data is available to access */
   return (int) MAX(cp->hit_latency, (blk->ready - now));
