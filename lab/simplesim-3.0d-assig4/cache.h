@@ -170,9 +170,11 @@ struct it_entry_t
 
 struct ghb_entry_t
 {
-  struct ghb_entry_t *prev;
-
+  md_addr_t prev;
   md_addr_t addr;
+
+  md_addr_t prev_pc;
+  int pc;
 };
 
 /* ECE552 Assignment 4 - END CODE */
