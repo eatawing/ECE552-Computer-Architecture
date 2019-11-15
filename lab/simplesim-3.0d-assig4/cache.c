@@ -61,10 +61,8 @@
 /* ECE552 Assignment 4 - BEGIN CODE */
 #include <stdint.h>
 
-#define CZONE_SZ  4096
-#define INDEX_TABLE_SZ 128
-#define GLOBAL_HISTORY_BUFFER_SZ 512
-#define ADDR_TO_CDC_TAG(addr) ((intptr_t)addr & ~((1 << (log_base2(CZONE_SZ))) - 1))
+#define GLOBAL_HISTORY_BUFFER_SZ 1024
+// #define ADDR_TO_CDC_TAG(addr) ((intptr_t)addr & ~((1 << (log_base2(CZONE_SZ))) - 1))
 #define GHB_INDEX_TO_HEAD(head, index) (((intptr_t)head & ~(GLOBAL_HISTORY_BUFFER_SZ-1)) + index)
 #define GHB_HEAD_TO_INDEX(head) ((intptr_t)head & (GLOBAL_HISTORY_BUFFER_SZ - 1))
 #define GHB_HEAD_INC(head)  (((intptr_t)head == 0xFFFFFFFFFFFFFFFF)  ?         \
@@ -74,18 +72,6 @@
 #define INDEX_INCR(index) (index == (GLOBAL_HISTORY_BUFFER_SZ - 1)) ? 0 : (index + 1)
 
 #define USE_BADDR 0
-/***
- * 1: CS Only 
- * 2: DC Only  
- * 3: Both
- ***/
-#define PREFETCH_MODE 1
-
-#define USE_CS 0b01
-#define USE_DC 0b10
-
-static unsigned cs_stat = 0;
-static unsigned dc_stat = 0;
 /* ECE552 Assignment 4 - END CODE */
 
 /* cache access macros */
@@ -444,27 +430,18 @@ cache_create(char *name,		/* name of the cache */
     }
 
   /* ECE552 Assignment 4 - BEGIN CODE */
-  /* Initialize Index Table & Global History Buffer */
+  /* Initialize Global History Buffer */
   if (prefetch_type == 2) {
-    cp->it = calloc(INDEX_TABLE_SZ, sizeof(struct it_entry_t));
     cp->ghb = calloc(GLOBAL_HISTORY_BUFFER_SZ, sizeof(struct ghb_entry_t));
 
-    for (size_t index = 0; index < INDEX_TABLE_SZ; index++ ) {
-      cp->it[index].tag = 0;
-      cp->it[index].index_addr = 0;
-    }
-
     for (size_t index = 0; index < GLOBAL_HISTORY_BUFFER_SZ; index++ ) {
-      cp->ghb[index].prev = 0;
+      cp->ghb[index].pc = 0;
       cp->ghb[index].addr = 0;
       cp->ghb[index].prev_pc = 0;
-      cp->ghb[index].pc = 0;
     }
 
-    assert(cp->it);
     assert(cp->ghb);
-
-    cp->ghb_head = NULL;
+    cp->ghb_head = (0x0 & (1 << log_base2(GLOBAL_HISTORY_BUFFER_SZ)));
   }
 
   /* Initialize RPT table */
@@ -603,41 +580,32 @@ void next_line_prefetcher(struct cache_t *cp, md_addr_t addr) {
 /* Open Ended Prefetcher */
 void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   /* ECE552 Assignment 4 - BEGIN CODE */
-  /* Aquire tag for DC & CS */
+  /* Aquire tag for CS */
   addr = (USE_BADDR) ? CACHE_BADDR(cp, addr) : addr;
 
-  md_addr_t cdc_tag = ADDR_TO_CDC_TAG(addr);
+  // md_addr_t cdc_tag = ADDR_TO_CDC_TAG(addr);
   int pc = get_PC() >> 3;
 
-  long int cs_entry_index = (USE_CS & PREFETCH_MODE) ? -1 : 1;
-  long int dc_entry_index = (USE_DC & PREFETCH_MODE) ? -1 : 1;
+  long int cs_entry_index = -1;
 
-  /* DC: Entry look-up in GHB */  
+  /* CS: Entry look-up in GHB */  
   unsigned head_index = GHB_HEAD_TO_INDEX(cp->ghb_head);
   unsigned cur_index = INDEX_DECR(head_index);
   while (cur_index != head_index) {
-    /* DC */
-    if (ADDR_TO_CDC_TAG(cp->ghb[cur_index].addr) == cdc_tag && (dc_entry_index == -1)) {
-      dc_entry_index = cur_index;
-    }
     /* CS */
-    if (cp->ghb[cur_index].pc == pc && (cs_entry_index == -1)) {
+    if (cp->ghb[cur_index].pc == pc) {
       cs_entry_index = cur_index;
+      break;
     }
-
-    if (dc_entry_index > 0 && cs_entry_index > 0) break;
-
     cur_index = INDEX_DECR(cur_index);
   }
 
-  int offset = 0;                       // Offset to acquire pre-fetch address
-  unsigned found = 0;                   // Either DC or CS found a fit pattern
+  int offset = 0;                                               // Offset to acquire pre-fetch address
+  unsigned found = 0;                                           // Either DC or CS found a fit pattern
 
-  /* In case DC fails, perform CS pre-fetch */
-  if (!found && (cs_entry_index > 0) && (USE_CS & PREFETCH_MODE)) {
+  if (cs_entry_index > 0) {
     /* CS: Find constant stride */
     size_t prev_index;
-
     struct ghb_entry_t *cs_entry = &cp->ghb[cs_entry_index];
     struct ghb_entry_t *prev_miss_entry;
 
@@ -653,7 +621,6 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
         stride = cs_entry->addr - prev_miss_entry->addr;
       } else {
         int new_stride = cs_entry->addr - prev_miss_entry->addr;
-
         if (new_stride == stride) count ++;
         else stride = new_stride;
       }
@@ -661,43 +628,9 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
       if (count == 1) {
         offset = stride;
         found = 1;
-        cs_stat++;
         break;
       }
-
       cs_entry = prev_miss_entry;
-    }
-  }
-
-  /* Perform CZone/Delta co-relation pre-fetch */
-  if (!found && (dc_entry_index > 0) && (USE_DC& PREFETCH_MODE)) {
-    /* DC: Construct delta buffer */
-    int buf_ind = 0;
-    int delta_buffer[GLOBAL_HISTORY_BUFFER_SZ] = {-1};          // Delta buffer
-
-    size_t prev_index;
-    struct ghb_entry_t *dc_entry = &cp->ghb[dc_entry_index];
-    struct ghb_entry_t *prev_miss_entry;
-
-    for(;buf_ind < GLOBAL_HISTORY_BUFFER_SZ;buf_ind++) {
-      if (!dc_entry->prev) break;
-
-      prev_index = GHB_HEAD_TO_INDEX(dc_entry->prev);
-      prev_miss_entry = &cp->ghb[prev_index];
-
-      delta_buffer[buf_ind] = dc_entry->addr - prev_miss_entry->addr;
-
-      dc_entry = prev_miss_entry;
-    }
-
-    /* Use the delta pair as key, find if there is any matching delta pair in GHB */
-    for (size_t cur_ind  = 4; cur_ind < buf_ind; cur_ind++) {
-      if (delta_buffer[0] == delta_buffer[cur_ind - 1] && delta_buffer[1] == delta_buffer[cur_ind]) {
-        offset = delta_buffer[cur_ind - 2];
-        found = 1;
-        dc_stat++;
-        break;
-      }
     }
   }
 
@@ -713,20 +646,11 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   if (cache_probe(cp, next_blk_addr)) return;
 
   cache_access(cp, Read, next_blk_addr, NULL, cp->bsize, 0, NULL, NULL, 1);
-
   /* ECE552 Assignment 4 - END CODE */
-}
-
-void print_stat() {
-  printf("CS: %u, DC: %u\n", cs_stat, dc_stat);
 }
 
 /* ECE552 Assignment 4 - BEGIN CODE */
 void print_ghb(struct cache_t *cp) {
-  // printf("Index Table:\n");
-  // for (int i=0;i<INDEX_TABLE_SZ;i++) {
-  //   printf("%d\t%p\t%p:%d\n", i, cp->it[i].tag, cp->it[i].index_addr, GHB_HEAD_TO_INDEX(cp->it[i].index_addr));
-  // }
   printf("Here\n");
   printf("GHB ---- Head: %p, pos: %d\n", cp->ghb_head, GHB_HEAD_TO_INDEX(cp->ghb_head));
   printf("index\tprev\taddr\tCDC tag\n");
@@ -745,7 +669,7 @@ void print_ghb(struct cache_t *cp) {
       prev_pc = -1;
     }
 
-    printf("%d\t%p:%d\t%p\t%p\t|\tPC:%p\t%p:%d\n", i, cp->ghb[i].prev, prev, cp->ghb[i].addr, ADDR_TO_CDC_TAG(cp->ghb[i].addr), cp->ghb[i].pc, cp->ghb[i].prev_pc, prev_pc);
+    printf("%d\t%p:%d\t%p\t|\tPC:%p\t%p:%d\n", i, cp->ghb[i].prev, prev, cp->ghb[i].addr, cp->ghb[i].pc, cp->ghb[i].prev_pc, prev_pc);
   }
 }
 /* ECE552 Assignment 4 - END CODE */
@@ -909,7 +833,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
     fatal("cache: access error: access spans block, addr 0x%08x", addr);
   
   /* permissions are checked on cache misses */
-
+  
   /* check for a fast hit: access to same block */
   if (CACHE_TAGSET(cp, addr) == cp->last_tagset)
     {
@@ -958,35 +882,21 @@ cache_access(struct cache_t *cp,	/* cache to access */
       size_t ghb_index = GHB_HEAD_TO_INDEX(cp->ghb_head);
       size_t prev_index = INDEX_DECR(ghb_index);
 
-      /* Delta Co-relation */
-      cp->ghb[ghb_index].addr = addr;
-      cp->ghb[ghb_index].prev = 0;
-      unsigned found_dc = 0;
       /* Constant stride */
       cp->ghb[ghb_index].pc = get_PC() >> 3;
+      cp->ghb[ghb_index].addr = addr;
       cp->ghb[ghb_index].prev_pc = 0;
-      unsigned found_cs = 0;
       while (prev_index != ghb_index) {
-        /* Delta co-relation entry linkage update */
-        if (!found_dc && ADDR_TO_CDC_TAG(cp->ghb[ghb_index].addr) == ADDR_TO_CDC_TAG(cp->ghb[prev_index].addr)) {
-          cp->ghb[ghb_index].prev = GHB_INDEX_TO_HEAD(cp->ghb_head, prev_index);
-          found_dc = 1;
-        }
         /* Constant stride entry linkage update */
-        if (!found_cs && cp->ghb[ghb_index].pc == cp->ghb[prev_index].pc) {
+        if (cp->ghb[ghb_index].pc == cp->ghb[prev_index].pc) {
           cp->ghb[ghb_index].prev_pc = GHB_INDEX_TO_HEAD(cp->ghb_head, prev_index);
-          found_cs = 1;
+          break;
         }
-        /* Stop traversing if both attributes get filled */
-        if (found_dc && found_cs) break;
         prev_index = INDEX_DECR(prev_index);
       }
 
       /* Reset invalid "prev" */
       for (size_t cur_index = 0; cur_index < GLOBAL_HISTORY_BUFFER_SZ; cur_index++) {
-        if (GHB_HEAD_TO_INDEX(cp->ghb[cur_index].prev) == ghb_index) {
-          cp->ghb[cur_index].prev = 0;
-        }
         if (GHB_HEAD_TO_INDEX(cp->ghb[cur_index].prev_pc) == ghb_index) {
           cp->ghb[cur_index].prev_pc = 0;
         }
