@@ -61,9 +61,10 @@
 /* ECE552 Assignment 4 - BEGIN CODE */
 #include <stdint.h>
 
-#define CZONE_SZ  4096
+#define CZONE_SZ  16384
 #define INDEX_TABLE_SZ 1024
-#define GLOBAL_HISTORY_BUFFER_SZ 256
+#define GLOBAL_HISTORY_BUFFER_SZ 512
+#define DELTA_BUFFER_SIZE 512
 #define ADDR_TO_CDC_TAG(addr) ((intptr_t)addr & ~((1 << (log_base2(CZONE_SZ))) - 1))
 #define GHB_INDEX_TO_HEAD(head, index) (void *)(((intptr_t)head & ~(GLOBAL_HISTORY_BUFFER_SZ-1)) + index)
 #define GHB_HEAD_TO_INDEX(head) ((intptr_t)head & (GLOBAL_HISTORY_BUFFER_SZ - 1))
@@ -671,13 +672,13 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   } 
 
   // printf("222444\n");
-  int delta_buffer[256];
+  int delta_buffer[DELTA_BUFFER_SIZE];
   int index = 0;
   int fetch_delta[2] = {0};
 
   ghb_entry_t* cur_ghb_entry = prefetch_candidate;
 
-  while (cur_ghb_entry && index < 4096){
+  while (cur_ghb_entry && index < DELTA_BUFFER_SIZE){
     // printf("sss\n");
     if (!cur_ghb_entry->prev_czone) {
       // printf("23225222\n");
