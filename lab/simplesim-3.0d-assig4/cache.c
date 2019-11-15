@@ -609,7 +609,7 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
     struct ghb_entry_t *cs_entry = &cp->ghb[cs_entry_index];
     struct ghb_entry_t *prev_miss_entry;
 
-    int stride = 0;
+    md_addr_t stride = 0;
     unsigned init = 1;
     while (cs_entry->prev_pc) {
       prev_index = GHB_HEAD_TO_INDEX(cs_entry->prev_pc);
@@ -619,7 +619,7 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
         init = 0;
         stride = cs_entry->addr - prev_miss_entry->addr;
       } else {
-        int new_stride = cs_entry->addr - prev_miss_entry->addr;
+        md_addr_t new_stride = cs_entry->addr - prev_miss_entry->addr;
         if (new_stride == stride) {
           offset = stride;
           found = 1;
