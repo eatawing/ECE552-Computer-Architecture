@@ -61,7 +61,7 @@
 /* ECE552 Assignment 4 - BEGIN CODE */
 #include <stdint.h>
 
-#define CZONE_SZ  65536
+#define CZONE_SZ  4096
 #define INDEX_TABLE_SZ 128
 #define GLOBAL_HISTORY_BUFFER_SZ 512
 #define ADDR_TO_CDC_TAG(addr) ((intptr_t)addr & ~((1 << (log_base2(CZONE_SZ))) - 1))
@@ -73,10 +73,14 @@
 #define INDEX_DECR(index) (index == 0) ? (GLOBAL_HISTORY_BUFFER_SZ - 1) : (index - 1)
 #define INDEX_INCR(index) (index == (GLOBAL_HISTORY_BUFFER_SZ - 1)) ? 0 : (index + 1)
 
-#define PREFETCH_DEGREE 2
-#define USE_BADDR 1
+#define USE_BADDR 0
+/***
+ * 1: CS Only 
+ * 2: DC Only  
+ * 3: Both
+ ***/
+#define PREFETCH_MODE 1
 
-#define PREFETCH_MODE 2                 // 1: CS Only   2: DC Only  3: Both
 #define USE_CS 0b01
 #define USE_DC 0b10
 
@@ -605,13 +609,13 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   md_addr_t cdc_tag = ADDR_TO_CDC_TAG(addr);
   int pc = get_PC() >> 3;
 
-  long int dc_entry_index = -1;
-  long int cs_entry_index = -1;
+  long int cs_entry_index = (USE_CS & PREFETCH_MODE) ? -1 : 1;
+  long int dc_entry_index = (USE_DC & PREFETCH_MODE) ? -1 : 1;
 
-  /* DC: Entry look-up in GHB */
+  /* DC: Entry look-up in GHB */  
   unsigned head_index = GHB_HEAD_TO_INDEX(cp->ghb_head);
   unsigned cur_index = INDEX_DECR(head_index);
-  do {
+  while (cur_index != head_index) {
     /* DC */
     if (ADDR_TO_CDC_TAG(cp->ghb[cur_index].addr) == cdc_tag && (dc_entry_index == -1)) {
       dc_entry_index = cur_index;
@@ -624,16 +628,10 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
     if (dc_entry_index > 0 && cs_entry_index > 0) break;
 
     cur_index = INDEX_DECR(cur_index);
-  } while (cur_index != head_index);
+  }
 
   int offset = 0;                       // Offset to acquire pre-fetch address
   unsigned found = 0;                   // Either DC or CS found a fit pattern
-
-  unsigned prefetch_degree = 2;
-
-  /* Prefetch Degree */
-  unsigned offset_array_index = 0;
-  int offset_array[PREFETCH_DEGREE] = {-1};
 
   /* In case DC fails, perform CS pre-fetch */
   if (!found && (cs_entry_index > 0) && (USE_CS & PREFETCH_MODE)) {
@@ -672,7 +670,7 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   }
 
   /* Perform CZone/Delta co-relation pre-fetch */
-  if (!found && (dc_entry_index > 0) && (USE_DC & PREFETCH_MODE)) {
+  if (!found && (dc_entry_index > 0) && (USE_DC& PREFETCH_MODE)) {
     /* DC: Construct delta buffer */
     int buf_ind = 0;
     int delta_buffer[GLOBAL_HISTORY_BUFFER_SZ] = {-1};          // Delta buffer
@@ -693,7 +691,7 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
     }
 
     /* Use the delta pair as key, find if there is any matching delta pair in GHB */
-    for (size_t cur_ind  = 2; cur_ind < buf_ind; cur_ind++) {
+    for (size_t cur_ind  = 4; cur_ind < buf_ind; cur_ind++) {
       if (delta_buffer[0] == delta_buffer[cur_ind - 1] && delta_buffer[1] == delta_buffer[cur_ind]) {
         offset = delta_buffer[cur_ind - 2];
         found = 1;
