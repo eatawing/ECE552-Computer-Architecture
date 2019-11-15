@@ -63,7 +63,7 @@
 
 #define CZONE_SZ  16384
 #define INDEX_TABLE_SZ 1024
-#define GLOBAL_HISTORY_BUFFER_SZ 512
+#define GLOBAL_HISTORY_BUFFER_SZ 1024
 #define DELTA_BUFFER_SIZE 512
 #define ADDR_TO_CDC_TAG(addr) ((intptr_t)addr & ~((1 << (log_base2(CZONE_SZ))) - 1))
 #define GHB_INDEX_TO_HEAD(head, index) (void *)(((intptr_t)head & ~(GLOBAL_HISTORY_BUFFER_SZ-1)) + index)
@@ -651,7 +651,7 @@ it_entry_t* allocate_new_it_entry(struct cache_t* cp, ghb_entry_t* ghb_entry, md
 /* Open Ended Prefetcher */
 void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   /* ECE552 Assignment 4 - BEGIN CODE */
-  md_addr_t cdc_tag = ADDR_TO_CDC_TAG(get_PC() >> 3);
+  md_addr_t cdc_tag = get_PC() >> 3;
 //    md_addr_t index = addr % INDEX_TABLE_SZ;
 
   md_addr_t next_blk_addr;
@@ -989,7 +989,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
     // }
 
     if (cp->prefetch_type == 2) {
-      md_addr_t cdc_tag = ADDR_TO_CDC_TAG(get_PC() >> 3);
+      md_addr_t cdc_tag = get_PC() >> 3;
 //    md_addr_t index = addr % INDEX_TABLE_SZ;
 
       md_addr_t next_blk_addr;
