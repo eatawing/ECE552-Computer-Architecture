@@ -9,9 +9,10 @@ int main(int argc, const char * argv[]) {
     // the following loop is accessing the array at a constant interval, but larger than cache block
     // therefore, stride prefetcher should be able to provide correct prefetches
     // hence misses are very few
-    for (epoch = 0; epoch < EPOCH; epoch++) {
+    // for (epoch = 0; epoch < EPOCH; epoch++) {
         for (i = 0; i < SIZE; i+=2048) {
             a[i]=1;
+            printf("%x\n", &a[i]);
         }
-    }
+    // }
 }

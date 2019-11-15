@@ -162,18 +162,27 @@ struct rpt_entry_t
   enum RPT_STATE state;
 };
 
-struct it_entry_t
+typedef struct ghb_entry
 {
-  void *index_addr;
-  md_addr_t tag;
-};
-
-struct ghb_entry_t
-{
-  struct ghb_entry_t *prev;
+  struct ghb_entry *next;
+  struct ghb_entry *next_czone;
+  struct ghb_entry *prev_czone;
 
   md_addr_t addr;
-};
+} ghb_entry_t;
+
+typedef struct it_entry
+{
+  struct it_entry* next;
+  md_addr_t tag;
+  struct ghb_entry* ghb_entry;
+} it_entry_t;
+
+typedef struct it_list
+{
+    it_entry_t* head;
+    it_entry_t* tail;
+} it_list_t;
 
 /* ECE552 Assignment 4 - END CODE */
 
@@ -255,10 +264,13 @@ struct cache_t
   /* RPT table pointer for stride prefetcher */
   struct rpt_entry_t *rpt;
 
-  struct it_entry_t *it;
-  struct ghb_entry_t *ghb;
+  it_list_t it;
+  // ghb_entry_t *ghb;
 
-  void *ghb_head;
+  ghb_entry_t *ghb_head;
+
+  int ghb_size;
+  ghb_entry_t *ghb_tail;
   /* ECE552 Assignment 4 - END CODE */
 
 
@@ -369,5 +381,9 @@ unsigned int				/* latency of flush operation */
 cache_flush_addr(struct cache_t *cp,	/* cache instance to flush */
 		 md_addr_t addr,	/* address of block to flush */
 		 tick_t now);		/* time of cache flush */
+
+
+ghb_entry_t* allocate_new_ghb_entry(struct cache_t *cp, md_addr_t addr);
+it_entry_t* allocate_new_it_entry(struct cache_t* cp, ghb_entry_t* ghb_entry, md_addr_t addr, md_addr_t cdc_tag);
 
 #endif /* CACHE_H */
