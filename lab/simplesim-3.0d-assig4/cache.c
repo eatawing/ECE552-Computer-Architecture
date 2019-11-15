@@ -601,6 +601,15 @@ void next_line_prefetcher(struct cache_t *cp, md_addr_t addr) {
   /* ECE552 Assignment 4 - END CODE */
 }
 
+void print_it(struct cache_t* cp) {
+  it_entry_t* cur_it_entry = cp->it.head;
+  while (cur_it_entry) {
+    printf("addr=%x    tag=%x    ghb=%x    next=%x\n", cur_it_entry, cur_it_entry->tag, cur_it_entry->ghb_entry ? cur_it_entry->ghb_entry->addr : NULL, cur_it_entry->next);
+    cur_it_entry = cur_it_entry->next;
+  }
+  printf("\n");
+}
+
 /* ECE552 Assignment 4 - BEGIN CODE */
 ghb_entry_t* allocate_new_ghb_entry(struct cache_t *cp, md_addr_t addr) {
   ghb_entry_t *new_entry = malloc(sizeof(ghb_entry_t));
@@ -1045,7 +1054,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
 
         // printf("8828208\n");
       }
-
+      print_it(cp);
       // printf("222444\n");
     }
   /* ECE552 Assignment 4 - END CODE */

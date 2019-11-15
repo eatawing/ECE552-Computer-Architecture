@@ -385,5 +385,5 @@ cache_flush_addr(struct cache_t *cp,	/* cache instance to flush */
 
 ghb_entry_t* allocate_new_ghb_entry(struct cache_t *cp, md_addr_t addr);
 it_entry_t* allocate_new_it_entry(struct cache_t* cp, ghb_entry_t* ghb_entry, md_addr_t addr, md_addr_t cdc_tag);
-
+void print_it(struct cache_t* cp);
 #endif /* CACHE_H */
