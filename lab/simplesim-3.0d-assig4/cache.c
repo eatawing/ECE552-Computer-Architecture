@@ -674,7 +674,7 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   // printf("222444\n");
   int delta_buffer[DELTA_BUFFER_SIZE];
   int index = 0;
-  int fetch_delta[2] = {0};
+  int fetch_delta;
 
   ghb_entry_t* cur_ghb_entry = prefetch_candidate;
 
@@ -688,19 +688,19 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
     delta_buffer[index] = cur_ghb_entry->addr - cur_ghb_entry->prev_czone->addr;
 
     // printf("333\n");
-    if (index >= 3 && delta_buffer[index] == delta_buffer[1] && delta_buffer[index - 1] == delta_buffer[0]) {
+    if (index >= 2 && delta_buffer[index] == delta_buffer[1] && delta_buffer[index - 1] == delta_buffer[0]) {
       // printf("111\n");
-      fetch_delta[0] = delta_buffer[index - 2];
-      fetch_delta[1] = delta_buffer[index - 3];
+      fetch_delta = delta_buffer[index - 2];
+      // fetch_delta[1] = delta_buffer[index - 3];
 
-      md_addr_t fetch_addr1 = addr + fetch_delta[0];
-      md_addr_t fetch_addr2 = fetch_addr1 + fetch_delta[1];
+      md_addr_t fetch_addr = addr + fetch_delta;
+      // md_addr_t fetch_addr2 = fetch_addr1 + fetch_delta;
 
 /* Align the addr to block */
 
       // printf("fetch1=%x   fetch2=%x\n", fetch_addr1, fetch_addr2);
-      md_addr_t tag = CACHE_TAG(cp, fetch_addr1);
-      md_addr_t set = CACHE_SET(cp, fetch_addr1);
+      md_addr_t tag = CACHE_TAG(cp, fetch_addr);
+      md_addr_t set = CACHE_SET(cp, fetch_addr);
       next_blk_addr = CACHE_MK_BADDR(cp, tag, set);
 
       if (!cache_probe(cp, next_blk_addr)) {
