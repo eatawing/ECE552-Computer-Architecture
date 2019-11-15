@@ -169,6 +169,7 @@ typedef struct ghb_entry
   struct ghb_entry *prev_czone;
 
   md_addr_t addr;
+  md_addr_t pc;
 } ghb_entry_t;
 
 typedef struct it_entry

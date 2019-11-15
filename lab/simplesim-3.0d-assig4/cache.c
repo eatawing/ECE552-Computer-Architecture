@@ -617,6 +617,7 @@ ghb_entry_t* allocate_new_ghb_entry(struct cache_t *cp, md_addr_t addr) {
   new_entry->prev_czone = NULL;
   new_entry->next_czone = NULL;
   new_entry->next = NULL;
+  new_entry->pc = get_PC() >> 3;
 
   if (!cp->ghb_head) {
     cp->ghb_head = new_entry;
@@ -650,7 +651,7 @@ it_entry_t* allocate_new_it_entry(struct cache_t* cp, ghb_entry_t* ghb_entry, md
 /* Open Ended Prefetcher */
 void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   /* ECE552 Assignment 4 - BEGIN CODE */
-  md_addr_t cdc_tag = ADDR_TO_CDC_TAG(addr);
+  md_addr_t cdc_tag = ADDR_TO_CDC_TAG(get_PC() >> 3);
 //    md_addr_t index = addr % INDEX_TABLE_SZ;
 
   md_addr_t next_blk_addr;
@@ -683,7 +684,7 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
   // printf("222444\n");
   int delta_buffer[DELTA_BUFFER_SIZE];
   int index = 0;
-  int fetch_delta;
+  md_addr_t stride = addr - prefetch_candidate->addr;
 
   ghb_entry_t* cur_ghb_entry = prefetch_candidate;
 
@@ -694,15 +695,14 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
       return;
     }
 
-    delta_buffer[index] = cur_ghb_entry->addr - cur_ghb_entry->prev_czone->addr;
+    md_addr_t new_stride = cur_ghb_entry->addr - cur_ghb_entry->prev_czone->addr;
 
     // printf("333\n");
-    if (index >= 2 && delta_buffer[index] == delta_buffer[1] && delta_buffer[index - 1] == delta_buffer[0]) {
-      // printf("111\n");
-      fetch_delta = delta_buffer[index - 2];
+    if (new_stride == stride) {
+      // printf("111\n")
       // fetch_delta[1] = delta_buffer[index - 3];
 
-      md_addr_t fetch_addr = addr + fetch_delta;
+      md_addr_t fetch_addr = addr + stride;
       // md_addr_t fetch_addr2 = fetch_addr1 + fetch_delta;
 
 /* Align the addr to block */
@@ -729,6 +729,7 @@ void open_ended_prefetcher(struct cache_t *cp, md_addr_t addr) {
       return;
     }
     cur_ghb_entry = cur_ghb_entry->prev_czone;
+    stride = new_stride;
     index++;
   }
 }
@@ -988,7 +989,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
     // }
 
     if (cp->prefetch_type == 2) {
-      md_addr_t cdc_tag = ADDR_TO_CDC_TAG(addr);
+      md_addr_t cdc_tag = ADDR_TO_CDC_TAG(get_PC() >> 3);
 //    md_addr_t index = addr % INDEX_TABLE_SZ;
 
       md_addr_t next_blk_addr;
@@ -1011,7 +1012,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
           } else {
             it_entry_t* it_entry_temp = cp->it.head;
             while (it_entry_temp) {
-              if (it_entry_temp->tag == ADDR_TO_CDC_TAG(head_entry->addr)) {
+              if (it_entry_temp->tag == head_entry->pc) {
                 it_entry_temp->ghb_entry = NULL;
                 break;
               }
