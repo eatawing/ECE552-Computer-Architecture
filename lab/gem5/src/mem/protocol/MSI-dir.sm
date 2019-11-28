@@ -41,6 +41,11 @@ machine(Directory, "Directory protocol")
     I, AccessPermission:Invalid, desc="Not Present/Invalid";
     M, AccessPermission:Read_Write, desc="Modified";
 
+    /* ECE552: Assignment 5 - BEGIN CODE */
+    S, AccessPermission:Read_Only, desc="Shared";
+    /* ECE552: Assignment 5 - END CODE*/
+    
+
     /* ECE552: Complete this section here */
 
     //========================
@@ -48,6 +53,15 @@ machine(Directory, "Directory protocol")
     //========================
 
     /* ECE552: Complete this section here */
+    
+    /* ECE552: Assignment 5 - BEGIN CODE */
+    MS_DA, AccessPermission:Busy, desc="Transient state moving from M to S, waiting for data and mem ack";
+    MS_A, AccessPermission:Busy, desc="Transient state moving from M to S, data received, waiting for mem ack";
+    MI_A, AccessPermission:Busy, desc="Transient state moving from M to I, waiting for mem ack";
+
+    IS_M, AccessPermission:Busy, desc="Transient state moving from I to S, waiting for mem ack";
+    IM_M, AccessPermission:Busy, desc="Transient state moving from I to M, waiting for mem data";
+    /* ECE552: Assignment 5 - END CODE*/
   }
 
   // =============================================================================
@@ -537,5 +551,125 @@ getDirectoryEntry(address).Sharers);
 
   /* ECE552: Complete this section here */
 
+  /* ECE552: Assignment 5 - BEGIN CODE */
+  transition(I, GETS, IS_M) {
+    vv_allocateTBEFromRequestNet;
+    qf_queueMemoryFetchRequest;
+    i_popIncomingRequestQueue;
+  }
 
+  transition(IS_M, Memory_Data, S) {
+    w_writeDataToDirectoryFromTBE;
+    d_sendData;
+    ars1_addRequestorToSharers;
+    w_deallocateTBE;
+    qm_popMemQueue;
+  }
+
+  transition(I, {PUTS_Last, PUTS_NotLast, PUTM_NotOwner}) {
+    a_sendWriteBackAck;
+    i_popIncomingRequestQueue;
+  }
+
+  transition(I, GETM, IM_M) {
+    vv_allocateTBEFromRequestNet;
+    qf_queueMemoryFetchRequest;
+    e_ownerIsRequestor;
+    i_popIncomingRequestQueue;
+  }
+
+  transition(IM_M, Memory_Data, M) {
+    w_writeDataToDirectoryFromTBE
+    d_sendData;
+    // cs_clearSharers;
+    w_deallocateTBE;
+    qm_popMemQueue;
+  }
+
+  transition(S, GETS) {
+    ds_sendSharedData;
+    ars2_addRequestorToSharers;
+    i_popIncomingRequestQueue;
+  }
+  
+  transition(S, GETM, M) {
+    ds2_sendSharedData;
+    fwm_sendFwdInvToSharersMinusRequestor;
+    cs_clearSharers;
+    e_ownerIsRequestor;
+    i_popIncomingRequestQueue;
+  }
+
+  transition(S, PUTS_Last, I) {
+    kk_removeRequestSharer;
+    a_sendWriteBackAck;
+    i_popIncomingRequestQueue;
+  }
+
+  transition(M, GETS, MS_DA) {
+    vv_allocateTBEFromRequestNet;
+    f_forwardRequest;
+    ars2_addRequestorToSharers;
+    aos_addOwnertoSharers;
+    c_clearOwner;
+    i_popIncomingRequestQueue;
+  }
+
+  transition(MS_DA, Data, MS_A) {
+    pl2_writeDataToDirectory;
+    lq2_queueMemoryWBRequest;
+    pr_popIncomingResponseQueue;
+  }
+
+  transition(MS_A, Memory_Ack, S) {
+    w_deallocateTBE;
+    qm_popMemQueue;
+  }
+
+  transition(MS_DA, PUTS_Last) {
+    kk_removeRequestSharer;
+    a_sendWriteBackAck;
+    i_popIncomingRequestQueue;
+  }
+
+  transition(MS_DA, {GETS, GETM}) {
+    z_stall;
+  }
+
+  transition(M, GETM) {
+    f_forwardRequest;
+    c_clearOwner;
+    e_ownerIsRequestor;
+    i_popIncomingRequestQueue;
+  }
+
+  transition(M, PUTM_Owner, MI_A) {
+    vv_allocateTBEFromRequestNet;
+    pl_writeDataToDirectory;
+    c_clearOwner;
+    lq_queueMemoryWBRequest;
+    i_popIncomingRequestQueue;
+  }
+
+  transition(MI_A, Memory_Ack, I) {
+    la_sendWriteBackAck;
+    w_deallocateTBE;
+    qm_popMemQueue;
+  }
+
+  transition({M, IM_M, MI_A}, {PUTS_Last, PUTS_NotLast, PUTM_NotOwner}) {
+    a_sendWriteBackAck;
+    i_popIncomingRequestQueue;
+  }
+
+  transition({S, MS_DA, MS_A, IS_M}, {PUTS_NotLast, PUTM_NotOwner}) {
+    kk_removeRequestSharer;
+    a_sendWriteBackAck;
+    i_popIncomingRequestQueue;
+  }
+
+  transition({MI_A, MS_A, IS_M, IM_M}, {GETS, GETM}) {
+    z_stall;
+  }
+  /* ECE552: Assignment 5 - END CODE*/
 }
