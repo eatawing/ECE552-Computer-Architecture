@@ -554,14 +554,13 @@ getDirectoryEntry(address).Sharers);
   /* ECE552: Assignment 5 - BEGIN CODE */
   transition(I, GETS, IS_M) {
     vv_allocateTBEFromRequestNet;
+    ars2_addRequestorToSharers;
     qf_queueMemoryFetchRequest;
     i_popIncomingRequestQueue;
   }
 
   transition(IS_M, Memory_Data, S) {
-    w_writeDataToDirectoryFromTBE;
     d_sendData;
-    ars1_addRequestorToSharers;
     w_deallocateTBE;
     qm_popMemQueue;
   }
@@ -579,16 +578,14 @@ getDirectoryEntry(address).Sharers);
   }
 
   transition(IM_M, Memory_Data, M) {
-    w_writeDataToDirectoryFromTBE
     d_sendData;
-    // cs_clearSharers;
     w_deallocateTBE;
     qm_popMemQueue;
   }
 
   transition(S, GETS) {
-    ds_sendSharedData;
     ars2_addRequestorToSharers;
+    ds_sendSharedData;
     i_popIncomingRequestQueue;
   }
   
@@ -611,7 +608,6 @@ getDirectoryEntry(address).Sharers);
     f_forwardRequest;
     ars2_addRequestorToSharers;
     aos_addOwnertoSharers;
-    c_clearOwner;
     i_popIncomingRequestQueue;
   }
 
@@ -623,6 +619,7 @@ getDirectoryEntry(address).Sharers);
 
   transition(MS_A, Memory_Ack, S) {
     w_deallocateTBE;
+    c_clearOwner;
     qm_popMemQueue;
   }
 
@@ -638,7 +635,7 @@ getDirectoryEntry(address).Sharers);
 
   transition(M, GETM) {
     f_forwardRequest;
-    c_clearOwner;
+   // c_clearOwner;
     e_ownerIsRequestor;
     i_popIncomingRequestQueue;
   }
@@ -646,7 +643,7 @@ getDirectoryEntry(address).Sharers);
   transition(M, PUTM_Owner, MI_A) {
     vv_allocateTBEFromRequestNet;
     pl_writeDataToDirectory;
-    c_clearOwner;
+    //c_clearOwner;
     lq_queueMemoryWBRequest;
     i_popIncomingRequestQueue;
   }
@@ -654,6 +651,7 @@ getDirectoryEntry(address).Sharers);
   transition(MI_A, Memory_Ack, I) {
     la_sendWriteBackAck;
     w_deallocateTBE;
+    c_clearOwner;
     qm_popMemQueue;
   }
 
@@ -662,7 +660,7 @@ getDirectoryEntry(address).Sharers);
     i_popIncomingRequestQueue;
   }
 
-  transition({S, MS_DA, MS_A, IS_M}, {PUTS_NotLast, PUTM_NotOwner}) {
+  transition({S, MS_DA, MS_A}, {PUTS_NotLast, PUTM_NotOwner}) {
     kk_removeRequestSharer;
     a_sendWriteBackAck;
     i_popIncomingRequestQueue;

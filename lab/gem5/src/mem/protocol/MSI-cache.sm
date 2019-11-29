@@ -63,7 +63,7 @@ machine(L1Cache, "MSI L1 Cache")
 
     MI_A, AccessPermission:Busy, desc="Transient state between M and I, waiting for ack";
     SI_A, AccessPermission:Busy, desc="Transient state between S and I, waiting for ack";
-    II_A, AccessPermission:Busy, desc="Transient state between I and I, waiting for ack";
+    II_A, AccessPermission:Busy, desc="Transient state for I, waiting for ack";
     /* ECE552: Assignment 5 - END CODE */
   }
 
@@ -631,6 +631,15 @@ machine(L1Cache, "MSI L1 Cache")
     m_popMandatoryQueue;
   }
 
+  transition(I, WB_Ack) {
+    o_popForwardedRequestQueue; 
+  }
+
+  transition(I, Inv) {
+    fi_sendInvAck;
+    o_popForwardedRequestQueue;
+  }
+
   transition(IS_D, {Load, Ifetch, Store, Replacement, Inv}) {
     z_stall;
   }
@@ -655,7 +664,7 @@ machine(L1Cache, "MSI L1 Cache")
   
   transition(IM_AD, Data_from_Dir_Ack_Cnt_Last, M) {
     u_writeDataToCache;
-    // q_updateAckCount;
+    q_updateAckCount;
     sx_store_hit;
     w_deallocateTBE;
     n_popResponseQueue;
@@ -688,8 +697,10 @@ machine(L1Cache, "MSI L1 Cache")
 
   transition(S, Store, SM_AD) {
     v_allocateTBE;
+    x_copyDataFromCacheToTBE;
     p_profileMiss;
     am_issueGetM;
+    m_popMandatoryQueue;
   }
 
   transition(S, Replacement, SI_A) {
@@ -711,7 +722,6 @@ machine(L1Cache, "MSI L1 Cache")
 
   transition(SM_AD, Inv, IM_AD) {
     fi_sendInvAck;
-    // forward_eviction_to_cpu;
     o_popForwardedRequestQueue;
   }
 
@@ -729,7 +739,7 @@ machine(L1Cache, "MSI L1 Cache")
   }
 
   transition(SM_AD, Data_from_Dir_Ack_Cnt_Last, M) {
-    // q_updateAckCount;
+    q_updateAckCount;
     u_writeDataToCache;
     sx_store_hit;
     w_deallocateTBE;
@@ -742,7 +752,7 @@ machine(L1Cache, "MSI L1 Cache")
   }
 
   transition(SM_A, Inv_Ack_all, M) {
-    // q_updateAckCount;
+    q_updateAckCount;
     sx_store_hit;
     w_deallocateTBE;
     n_popResponseQueue;
@@ -757,7 +767,6 @@ machine(L1Cache, "MSI L1 Cache")
     v_allocateTBE;
     x_copyDataFromCacheToTBE;
     bm_issuePUTM;
-    // forward_eviction_to_cpu;
   }
 
   transition(M, Fwd_GetS, S) {
@@ -778,20 +787,17 @@ machine(L1Cache, "MSI L1 Cache")
   }
 
   transition(MI_A, Fwd_GetS, SI_A) {
-    // send data to Req and Dir
     ee_sendDataFromTBEToRequestor;
     dee_sendDataFromTBEToDir;
     o_popForwardedRequestQueue;
   }
 
   transition(MI_A, Fwd_GetM, II_A) {
-    // send data to Req
     ee_sendDataFromTBEToRequestor;
     o_popForwardedRequestQueue;
   }
 
   transition(SI_A, Inv, II_A) {
-    // send Inv-Ack to Req
     fi_sendInvAck;
     o_popForwardedRequestQueue;
   }
